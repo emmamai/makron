@@ -1,8 +1,8 @@
-CFLAGS= -Wall
+CFLAGS= -Wall -g
 DEFINES=
 
 all: toolwm
-	
+
 toolwm: main.c
 	gcc -L./ -o toolwm main.c -lxcb $(CFLAGS)
 
