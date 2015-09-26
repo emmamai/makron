@@ -8,7 +8,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "15"
+#define VERSION_BUILDSTR "16"
 
 #define MAX_CLIENTS 1024
 
@@ -16,13 +16,6 @@
 #define BORDER_SIZE_RIGHT 1
 #define BORDER_SIZE_TOP 19
 #define BORDER_SIZE_BOTTOM 1
-
-
-xcb_connection_t *c;
-xcb_screen_t *screen;
-xcb_generic_event_t *e;
-xcb_colormap_t colormap;
-unsigned int greyPixel;
 
 typedef enum {
 	STATE_WITHDRAWN = 0,
@@ -36,6 +29,11 @@ typedef enum {
 	STATE_REPARENTED,
 	STATE_TRANSIENT
 } clientManagementState_t;
+
+typedef enum {
+	WMSTATE_IDLE,
+	WMSTATE_DRAG
+} wmState_t;
 
 typedef struct client_s {
 	xcb_window_t window;
@@ -55,6 +53,17 @@ typedef struct client_s {
 } client_t;
 
 client_t *firstClient = NULL;
+xcb_connection_t *c;
+xcb_screen_t *screen;
+xcb_generic_event_t *e;
+xcb_colormap_t colormap;
+unsigned int greyPixel;
+
+wmState_t wmState = WMSTATE_IDLE;
+client_t *dragClient;
+short dragStartX;
+short dragStartY;
+
 
 void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
 	unsigned short pmask = 	XCB_CONFIG_WINDOW_X |
@@ -66,35 +75,37 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 	unsigned short cmask = 	XCB_CONFIG_WINDOW_WIDTH |
 							XCB_CONFIG_WINDOW_HEIGHT |
 							XCB_CONFIG_WINDOW_BORDER_WIDTH;
+	int i;
 
 	n->x = x;
 	n->y = y;
 	n->width = width;
 	n->height = height;
-	int i = 0;
 
-	if ( ( i = screen->width_in_pixels - n->width - x ) > screen->width_in_pixels ) {
-		n->x = n->x - i;
+	i = ( n->width + n->x );
+	if ( i > screen->width_in_pixels ) {
+		n->x -= i - screen->width_in_pixels;
 	}
-	if ( ( i = screen->height_in_pixels - n->height - y ) > screen->height_in_pixels ) {
-		n->y = n->y - i;
+	i = ( n->height + n->y );
+	if ( i > screen->height_in_pixels ) {
+		n->y -= i - screen->height_in_pixels;
 	}
-	if ( x < 0 ) {
+	if ( n->x < 0 ) {
 		n->x = 0;
 	}
-	if ( y < 0 ) {
+	if ( n->y < 0 ) {
 		n->y = 0;
 	}
 	unsigned int pv[5] = {
-		x, 
-		y, 
-		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT, 
-		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM, 
+		n->x, 
+		n->y, 
+		n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT, 
+		n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM, 
 		0
 	};
 	unsigned int cv[3] = {
-		width, 
-		height, 
+		n->width, 
+		n->height, 
 		0
 	};
 	
@@ -105,7 +116,13 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	unsigned int v[2] = { greyPixel, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
+	unsigned int v[2] = { 	greyPixel, 
+							XCB_EVENT_MASK_EXPOSURE | 
+							XCB_EVENT_MASK_BUTTON_PRESS | 
+							XCB_EVENT_MASK_BUTTON_RELEASE | 
+							XCB_EVENT_MASK_POINTER_MOTION | 
+							XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
+							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
 	client_t *m = firstClient;
 	client_t *n = firstClient;
 
@@ -223,6 +240,39 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 	}
 }
 
+void DoButtonPress( xcb_button_press_event_t *e ) {
+	client_t *n = firstClient;
+	
+	for ( ; n != NULL; n = n->nextClient ) {
+		if ( n->parent == e->event ) {
+			printf( "Window drag at (%d,%d)local, (%d,%d)root in window %x\n", e->event_x, e->event_y, e->root_x, e->root_y, e->event );
+			dragClient = n;
+			wmState = WMSTATE_DRAG;
+			dragStartX = e->event_x;
+			dragStartY = e->event_y;
+			return;
+		}
+	}
+}
+
+void DoButtonRelease( xcb_button_release_event_t *e ) {
+	wmState = WMSTATE_IDLE;
+	dragClient = NULL;
+	dragStartX = 0;
+	dragStartY = 0;
+	printf( "Window drag done\n" );
+}
+
+void DoMotionNotify( xcb_motion_notify_event_t *e ) {
+	int x;
+	int y;
+	if ( wmState == WMSTATE_DRAG ) {
+		x = e->root_x - dragStartX;
+		y =  e->root_y - dragStartY;
+		ConfigureClient( dragClient, x, y, dragClient->width, dragClient->height );
+	}
+}
+
 int BecomeWM(  ) {
 	unsigned int v[1];
 	xcb_void_cookie_t cookie;
@@ -308,6 +358,15 @@ int main() {
 				break;
 			case XCB_DESTROY_NOTIFY:
 				DoDestroy( (xcb_destroy_notify_event_t *)e );
+				break;
+			case XCB_BUTTON_PRESS:
+				DoButtonPress( (xcb_button_press_event_t *)e );
+				break;
+			case XCB_BUTTON_RELEASE:
+				DoButtonRelease( (xcb_button_release_event_t *)e );
+				break;
+			case XCB_MOTION_NOTIFY:
+				DoMotionNotify( (xcb_motion_notify_event_t *)e );
 				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
