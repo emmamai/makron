@@ -281,8 +281,10 @@ int main() {
 				break;
 			case XCB_CONFIGURE_REQUEST:
 				DoConfigureRequest( (xcb_configure_request_event_t *)e );
+				break;
 			case XCB_EXPOSE:
 				DoExpose( (xcb_expose_event_t *)e );
+				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
 				break;
