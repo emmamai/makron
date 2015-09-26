@@ -157,14 +157,14 @@ int main() {
 	c = xcb_connect( NULL, NULL );
 	if ( xcb_connection_has_error( c ) ) {
 			printf( "Uh oh! It looks like X isn't running.\n" );
-			printf( "You'll need to start it before you can run toolwm.\n" );
+			printf( "You'll need to start it before you can run makron.\n" );
 			Cleanup();
 			return 1;
 	}
 	screen = xcb_setup_roots_iterator( xcb_get_setup( c ) ).data;
 	if ( BecomeWM() < 0 ) {
 		printf( "Uh oh! It looks like there's another window manager running.\n" );
-		printf( "You'll need to close it before you can run toolwm.\n" );
+		printf( "You'll need to close it before you can run makron.\n" );
 		Cleanup();
 		return 1;
 	}
