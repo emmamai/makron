@@ -8,7 +8,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "13"
+#define VERSION_BUILDSTR "15"
 
 #define MAX_CLIENTS 1024
 
@@ -54,7 +54,7 @@ typedef struct client_s {
 	struct client_s *nextClient;
 } client_t;
 
-client_t *firstClient;
+client_t *firstClient = NULL;
 
 void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
 	unsigned short pmask = 	XCB_CONFIG_WINDOW_X |
@@ -202,6 +202,27 @@ void DoExpose( xcb_expose_event_t *e ) {
 	printf( "window %x exposed\n", e->window );
 }
 
+void DoDestroy( xcb_destroy_notify_event_t *e ) {
+	client_t *n = firstClient;
+	client_t *m = firstClient;
+
+	printf( "window %x destroyed\n", e->window );
+
+	for ( ; n != NULL; m = n, n = n->nextClient ) {
+		if ( n->window == e->window ) {
+			m->nextClient = n->nextClient;
+			xcb_destroy_window( c, n->parent );
+			if( firstClient == n ) {
+				firstClient = NULL;
+			}
+			free( n );
+			n = NULL;
+			xcb_flush( c );
+			return;
+		}
+	}
+}
+
 int BecomeWM(  ) {
 	unsigned int v[1];
 	xcb_void_cookie_t cookie;
@@ -284,6 +305,9 @@ int main() {
 				break;
 			case XCB_EXPOSE:
 				DoExpose( (xcb_expose_event_t *)e );
+				break;
+			case XCB_DESTROY_NOTIFY:
+				DoDestroy( (xcb_destroy_notify_event_t *)e );
 				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
