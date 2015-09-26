@@ -8,12 +8,13 @@
 xcb_connection_t *c;
 xcb_screen_t *screen;
 xcb_generic_event_t *e;
+xcb_colormap_t colormap;
+unsigned int greyPixel;
 
 typedef enum {
-	STATE_WITHDRAWN,
-	STATE_ICON,
-	STATE_NORMAL,
-	STATE_NULL
+	STATE_WITHDRAWN = 0,
+	STATE_ICON = 1,
+	STATE_NORMAL = 3,
 } clientWindowState_t;
 
 typedef enum {
@@ -43,7 +44,7 @@ typedef struct client_s {
 client_t *firstClient;
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	unsigned int v[2] = { screen->white_pixel, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
+	unsigned int v[2] = { greyPixel, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
 	client_t *m = firstClient;
 	client_t *n = firstClient;
 	int i = 0;
@@ -78,11 +79,12 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 	}
 
 	n->managementState = STATE_WITHDRAWN;
-	n->width = e->width + 2;
-	n->height = e->height + 20;
+	n->width = e->width + 2 + e->border_width * 2;
+	n->height = e->height + 20 + e->border_width * 2;
+
 	x = n->x = e->x - 1;
 	y = n->y = e->y - 20;
-
+	
 	if ( ( i = screen->width_in_pixels - n->width - x ) > screen->width_in_pixels ) {
 		x = x - i;
 	}
@@ -95,6 +97,11 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 	if ( y < 0 ) {
 		y = 0;
 	}
+
+	printf( "x: %d, y: %d w: %d h: %d\n", x, y, n->width, n->height );
+
+
+
 	n->parent = xcb_generate_id(c);
 	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
 							x, y, n->width, n->height, 
@@ -110,11 +117,38 @@ void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 	for ( ; n != NULL; n = n->nextClient ) {
 		if ( n->window == e->window ) {
 			n->managementState = STATE_MANAGED;
-			printf( "New window reparented successfully\n" );
+			printf( "window %x reparented successfully\n", e->window );
 			return;
 		}
 	}
 	printf("Reparented window doesn't exist!\n");
+}
+
+void DoMapRequest( xcb_map_request_event_t *e ) {
+	client_t *n = firstClient;
+
+	/* Todo:
+		Add ICCCM section 4.1.4 compatibility
+		https://tronche.com/gui/x/icccm/sec-4.html#s-4.1.3
+	*/
+
+	for ( ; n != NULL; n = n->nextClient ) {
+		if ( n->window == e->window ) {
+			if ( n->managementState == STATE_UNMANAGED ) {
+				xcb_map_window( c, e->window );
+				xcb_flush( c );
+				printf( "unmanaged window %x mapped\n", e->window );
+			} else {
+				xcb_map_window( c, n->parent );
+				xcb_map_window( c, n->window );
+				xcb_flush( c );
+				printf( "window %x mapped\n", e->window );
+			}
+			
+			return;
+		}
+	}
+	printf("Attempt to map nonexistent window!\n");
 }
 
 int BecomeWM(  ) {
@@ -150,6 +184,15 @@ void Quit( int r ) {
 	exit( r );
 }
 
+void SetupColors() {
+	xcb_alloc_color_reply_t *reply;
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 65535, 0, 0 ), NULL );
+	greyPixel = reply->pixel;
+	free( reply );
+
+}
+
 int main() {
 	signal( SIGTERM, Quit );
 	signal( SIGINT, Quit );
@@ -168,6 +211,10 @@ int main() {
 		Cleanup();
 		return 1;
 	}
+
+	colormap = screen->default_colormap;
+	SetupColors();	
+
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
 		
 		switch( e->response_type & ~0x80 ) {
@@ -176,6 +223,9 @@ int main() {
 				break;
 			case XCB_REPARENT_NOTIFY:
 				DoReparentNotify( (xcb_reparent_notify_event_t *)e );
+				break;
+			case XCB_MAP_REQUEST:
+				DoMapRequest( (xcb_map_request_event_t *)e );
 				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
