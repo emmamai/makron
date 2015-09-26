@@ -42,8 +42,8 @@ typedef struct client_s {
 
 client_t *firstClient;
 
-void HandleCreate( xcb_create_notify_event_t *e ) {
-	unsigned int v[1] = { screen->white_pixel };
+void DoCreateNotify( xcb_create_notify_event_t *e ) {
+	unsigned int v[2] = { screen->white_pixel, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
 	client_t *m = firstClient;
 	client_t *n = firstClient;
 	int i = 0;
@@ -53,25 +53,27 @@ void HandleCreate( xcb_create_notify_event_t *e ) {
 		return;
 	}
 
-
-	printf( "New child of root window\n" );
-
 	if ( n == NULL ) {
 		firstClient = n = malloc( sizeof( client_t ) );
 		n->nextClient = NULL;
 	} else {
 		while ( n != NULL ) {
+			if( e->window == n->window || e->window == n->parent ) {
+					printf( "New frame\n" );
+				return;
+			}
 			m = n;
 			n = m->nextClient;
 		}
 		m->nextClient = n = malloc( sizeof( client_t ) );
 		n->nextClient = NULL;
 	}
-	
+
 	n->window = e->window;
 
 	if ( e->override_redirect ) {
 		n->managementState = STATE_UNMANAGED;
+		printf( "New unmanaged window\n" );
 		return;
 	}
 
@@ -97,16 +99,22 @@ void HandleCreate( xcb_create_notify_event_t *e ) {
 	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
 							x, y, n->width, n->height, 
 							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
-							XCB_CW_BACK_PIXEL, v);
+							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
 	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
+	xcb_flush( c );
 }
 
-void HandleReparent( xcb_reparent_notify_event_t *e ) {
+void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 	client_t *n = firstClient;
 
-	for ( ; n->window != e->window; n = n->nextClient )
-		;
-	n->managementState = STATE_MANAGED;
+	for ( ; n != NULL; n = n->nextClient ) {
+		if ( n->window == e->window ) {
+			n->managementState = STATE_MANAGED;
+			printf( "New window reparented successfully\n" );
+			return;
+		}
+	}
+	printf("Reparented window doesn't exist!\n");
 }
 
 int BecomeWM(  ) {
@@ -138,7 +146,6 @@ void Cleanup() {
 }
 
 void Quit( int r ) {
-	printf( "PANTS\n" );
 	Cleanup();
 	exit( r );
 }
@@ -165,7 +172,10 @@ int main() {
 		
 		switch( e->response_type & ~0x80 ) {
 			case XCB_CREATE_NOTIFY: 
-				HandleCreate( (xcb_create_notify_event_t *)e );
+				DoCreateNotify( (xcb_create_notify_event_t *)e );
+				break;
+			case XCB_REPARENT_NOTIFY:
+				DoReparentNotify( (xcb_reparent_notify_event_t *)e );
 				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
