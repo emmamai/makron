@@ -1,10 +1,10 @@
 CFLAGS= -Wall -g
 DEFINES=
 
-all: toolwm
+all: makron
 
-toolwm: main.c
-	gcc -L./ -o toolwm main.c -lxcb $(CFLAGS)
+makron: main.c
+	gcc -L./ -o makron main.c -lxcb $(CFLAGS)
 
 clean:
-	rm *.o *.a toolwm
+	rm makron
