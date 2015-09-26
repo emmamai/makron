@@ -108,7 +108,6 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 	unsigned int v[2] = { greyPixel, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
 	client_t *m = firstClient;
 	client_t *n = firstClient;
-	int i = 0;
 
 	if ( e->parent != screen->root ) {
 		return;
@@ -178,17 +177,10 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 	for ( ; n != NULL; n = n->nextClient ) {
 		if ( n->window == e->window ) {
 			n->windowState = STATE_NORMAL;
-			if ( n->managementState == STATE_NO_REDIRECT ) {
-				xcb_map_window( c, e->window );
-				xcb_flush( c );
-				printf( "unmanaged window %x mapped\n", e->window );
-			} else {
-				xcb_map_window( c, n->parent );
-				xcb_map_window( c, n->window );
-				xcb_flush( c );
-				printf( "window %x mapped\n", e->window );
-			}
-			
+			xcb_map_window( c, n->parent );
+			xcb_map_window( c, n->window );
+			xcb_flush( c );
+			printf( "window %x mapped\n", e->window );
 			return;
 		}
 	}
@@ -249,7 +241,6 @@ void SetupColors() {
 	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 65535, 0, 0 ), NULL );
 	greyPixel = reply->pixel;
 	free( reply );
-
 }
 
 int main() {
