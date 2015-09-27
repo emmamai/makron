@@ -8,7 +8,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "20"
+#define VERSION_BUILDSTR "21"
 
 #define MAX_CLIENTS 1024
 
@@ -238,7 +238,13 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 		m->nextClient = n = malloc( sizeof( client_t ) );
 		n->nextClient = NULL;
 	}
-
+	if ( e->override_redirect ) {
+		n->managementState = STATE_NO_REDIRECT;
+		n->window = e->window;
+		n->parent = screen->root;
+		printf( "New unreparented window\n" );
+		return;
+	}
 	n->window = e->window;
 	n->width = e->width;
 	n->height = e->height;
@@ -247,11 +253,6 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 
 	n->managementState = STATE_WITHDRAWN;
 
-	if ( e->override_redirect ) {
-		n->managementState = STATE_NO_REDIRECT;
-		printf( "New unreparented window\n" );
-		return;
-	}
 	n->parent = xcb_generate_id( c );
 	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
 							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
