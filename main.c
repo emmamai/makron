@@ -73,8 +73,6 @@ unsigned int darkAccentContext;
 unsigned int accentContext;
 unsigned int lightAccentContext;
 
-
-
 wmState_t wmState = WMSTATE_IDLE;
 client_t *dragClient;
 short dragStartX;
@@ -93,6 +91,10 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 							XCB_CONFIG_WINDOW_HEIGHT |
 							XCB_CONFIG_WINDOW_BORDER_WIDTH;
 	int i;
+
+	if ( n == NULL ) {
+		return;
+	}
 
 	n->x = x;
 	n->y = y;
@@ -135,6 +137,10 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 void DrawFrame( client_t *n ) {
 	xcb_rectangle_t borderRect[1];
 	xcb_segment_t topBorderSegment[1];
+
+	if( n == NULL ) {
+		return;
+	}
 
 	borderRect[0].x = 0;
 	borderRect[0].y = 0;
@@ -192,12 +198,9 @@ void RaiseClient( client_t *n ) {
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
 	activeWindow = n->parent;
 	DrawFrame( n );
-	if( m != NULL ) {
-		DrawFrame( m );
-	}
+	DrawFrame( m ); //Yes, m could be null. DrawFrame() handles this case.
 	if ( n->managementState == STATE_NO_REDIRECT ) { //this might not be necessary
 		xcb_configure_window( c, n->window, mask, v );
-
 	} else {
 		xcb_configure_window( c, n->parent, mask, v );
 	}
@@ -260,69 +263,47 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 }
 
 void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
-	client_t *n = firstClient;
+	client_t *n = GetClientByWindow( e->window );
 
-	for ( ; n != NULL; n = n->nextClient ) {
-		if ( n->window == e->window ) {
-			n->managementState = STATE_REPARENTED;
-			ConfigureClient( n, n->x, n->y, n->width, n->height );
-			printf( "window %x reparented to window %x\n", e->window, e->parent );
-			return;
-		}
+	if ( n == NULL ) {
+		return;
 	}
-	printf("Reparented window doesn't exist!\n");
+
+	n->managementState = STATE_REPARENTED;
+	ConfigureClient( n, n->x, n->y, n->width, n->height );
+	printf( "window %x reparented to window %x\n", e->window, e->parent );
+	return;
 }
 
 void DoMapRequest( xcb_map_request_event_t *e ) {
-	client_t *n = firstClient;
+	client_t *n = GetClientByWindow( e->window );
 
 	/* Todo:
 		Add ICCCM section 4.1.4 compatibility
 		https://tronche.com/gui/x/icccm/sec-4.html#s-4.1.3
 	*/
-
-	for ( ; n != NULL; n = n->nextClient ) {
-		if ( n->window == e->window ) {
-			n->windowState = STATE_NORMAL;
-			xcb_map_window( c, n->parent );
-			xcb_map_window( c, n->window );
-			xcb_flush( c );
-			RaiseClient( n );
-			printf( "window %x mapped\n", e->window );
-			return;
-		}
+	if ( n == NULL ) {
+		return;
 	}
-	printf("Attempt to map nonexistent window!\n");
+	n->windowState = STATE_NORMAL;
+	xcb_map_window( c, n->parent );
+	xcb_map_window( c, n->window );
+	xcb_flush( c );
+	RaiseClient( n );
+	printf( "window %x mapped\n", e->window );
 }
 
 void DoConfigureRequest( xcb_configure_request_event_t *e ) {
-	client_t *n = firstClient;
-
-	for ( ; n != NULL; n = n->nextClient ) {
-		if ( n->window == e->window ) {
-			ConfigureClient( n, e->x, e->y, e->width, e->height );
-			return;
-		}
-	}
+	ConfigureClient( GetClientByWindow( e->window ), e->x, e->y, e->width, e->height );
 }
 
 void DoExpose( xcb_expose_event_t *e ) {
-	client_t *n = firstClient;
-
-	printf( "expose window %x, activeWindow is %x\n", e->window, activeWindow );
-
-	for ( ; n != NULL; n = n->nextClient ) {
-		if ( n->parent == e->window ) {
-			DrawFrame( n );
-		}
-	}
+	DrawFrame( GetClientByParent( e->window ) );
 }
 
 void DoDestroy( xcb_destroy_notify_event_t *e ) {
 	client_t *n = firstClient;
 	client_t *m = firstClient;
-
-	printf( "window %x destroyed\n", e->window );
 
 	for ( ; n != NULL; m = n, n = n->nextClient ) {
 		if ( n->window == e->window ) {
@@ -334,6 +315,9 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 			if( firstClient == n ) {
 				firstClient = n->nextClient;
 			}
+			if( dragClient == n ) {
+				dragClient = NULL;
+			}
 			free( n );
 			n = NULL;
 			xcb_flush( c );
@@ -343,19 +327,16 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 }
 
 void DoButtonPress( xcb_button_press_event_t *e ) {
-	client_t *n = firstClient;
+	client_t *n = GetClientByParent( e->event );
 	
-	for ( ; n != NULL; n = n->nextClient ) {
-		if ( n->parent == e->event ) {
-			printf( "Window drag at (%d,%d)local, (%d,%d)root in window %x\n", e->event_x, e->event_y, e->root_x, e->root_y, e->event );
-			RaiseClient( n );
-			dragClient = n;
-			wmState = WMSTATE_DRAG;
-			dragStartX = e->event_x;
-			dragStartY = e->event_y;
-			return;
-		}
+	if ( n == NULL ) {
+		return;
 	}
+	RaiseClient( n );
+	dragClient = n;
+	wmState = WMSTATE_DRAG;
+	dragStartX = e->event_x;
+	dragStartY = e->event_y;
 }
 
 void DoButtonRelease( xcb_button_release_event_t *e ) {
@@ -363,7 +344,6 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 	dragClient = NULL;
 	dragStartX = 0;
 	dragStartY = 0;
-	printf( "Window drag done\n" );
 }
 
 void DoMotionNotify( xcb_motion_notify_event_t *e ) {
