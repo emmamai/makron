@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <string.h>
 #include <xcb/xcb.h>
 
 #define PROGRAM_NAME "makron"
@@ -8,7 +9,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "21"
+#define VERSION_BUILDSTR "22"
 
 #define MAX_CLIENTS 1024
 
@@ -47,6 +48,8 @@ typedef struct client_s {
 	clientWindowState_t windowState;
 	clientManagementState_t managementState;
 
+	char name[256];
+
 	//todo: gravity
 
 	struct client_s *nextClient;
@@ -73,12 +76,19 @@ unsigned int darkAccentContext;
 unsigned int accentContext;
 unsigned int lightAccentContext;
 
+unsigned int inactiveFontContext;
+unsigned int activeFontContext;
+
+xcb_font_t windowFont;
+
 wmState_t wmState = WMSTATE_IDLE;
 client_t *dragClient;
 short dragStartX;
 short dragStartY;
 
 xcb_window_t activeWindow = NULL;
+
+
 
 void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
 	unsigned short pmask = 	XCB_CONFIG_WINDOW_X |
@@ -137,6 +147,11 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 void DrawFrame( client_t *n ) {
 	xcb_rectangle_t borderRect[1];
 	xcb_segment_t topBorderSegment[1];
+	int textLen = 0;
+	int textWidth = 0;
+	int textPos = 0;
+	xcb_query_text_extents_reply_t *r;
+	xcb_char2b_t *s;
 
 	if( n == NULL ) {
 		return;
@@ -152,16 +167,31 @@ void DrawFrame( client_t *n ) {
 	topBorderSegment[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
 	topBorderSegment[0].y2 = BORDER_SIZE_TOP - 1;
 
+	textLen = strnlen( n->name, 256 );
+	s = malloc( textLen * sizeof( xcb_char2b_t ) );
+	for( int i = 0; i < textLen; i++ ) {
+		s[i].byte1 = NULL;
+		s[i].byte2 = n->name[i];
+	}
+	r = xcb_query_text_extents_reply( c, xcb_query_text_extents( c, windowFont, textLen, s ), NULL );
+	textWidth = r->overall_width;
+	free( r ); 
+	free( s );
+	textPos = ( ( n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
+	printf( "text is %d pixels wide\n", textWidth );
+
 	if ( n->parent == activeWindow ) {
 		printf("Repainting active window\n");
 		xcb_poly_fill_rectangle( c, n->parent, lightGreyContext, 1, borderRect );
 		xcb_poly_rectangle( c, n->parent, blackContext, 1, borderRect );
 		xcb_poly_segment( c, n->parent, blackContext, 1, topBorderSegment );
+		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
 	} else {
 		printf("Repainting non-active window\n");
 		xcb_poly_fill_rectangle( c, n->parent, whiteContext, 1, borderRect );
 		xcb_poly_rectangle( c, n->parent, darkGreyContext, 1, borderRect );
 		xcb_poly_segment( c, n->parent, darkGreyContext, 1, topBorderSegment );
+		xcb_image_text_8( c, textLen, n->parent, inactiveFontContext, textPos, 14, n->name );
 	}
 	
 	xcb_flush( c );
@@ -250,6 +280,7 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 	n->height = e->height;
 	n->x = e->x;
 	n->y = e->y;
+	strncpy( n->name, "", 256 );
 
 	n->managementState = STATE_WITHDRAWN;
 
@@ -258,8 +289,9 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
 							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
 							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
-
 	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
+	v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
 	xcb_flush( c );
 }
 
@@ -357,6 +389,30 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	}
 }
 
+void DoPropertyNotify( xcb_property_notify_event_t *e ) {
+	xcb_get_property_cookie_t cookie;
+    xcb_get_property_reply_t *reply;
+	client_t *n = GetClientByWindow( e->window );
+
+	if ( n == NULL ) {
+		return;
+	}
+
+	if ( e->atom == XCB_ATOM_WM_NAME ) {
+		cookie = xcb_get_property( c, 0, e->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 0, 256 );
+		if ((reply = xcb_get_property_reply(c, cookie, NULL))) {
+			int len = xcb_get_property_value_length(reply);
+			if ( len != 0 ) {
+				strncpy( n->name, (char*)xcb_get_property_value( reply ), 256 );
+				DrawFrame( n );
+			}
+		}	
+		free( reply );
+	} else {
+		//printf( "window %x updated unknown atom\n", e->window );
+	}
+}
+
 int BecomeWM(  ) {
 	unsigned int v[1];
 	xcb_void_cookie_t cookie;
@@ -446,6 +502,29 @@ void SetupColors() {
 	xcb_create_gc( c, lightAccentContext, screen->root, XCB_GC_FOREGROUND, v );
 }
 
+void SetupAtoms() {	
+	//WM_NAME = xcb_intern_atom_reply( c, xcb_intern_atom( c, 0, strlen( "WM_NAME" ), "WM_NAME" ), NULL )->atom;
+}
+
+void SetupFonts() {
+	unsigned int v[3];
+
+	windowFont = xcb_generate_id( c );
+	xcb_open_font( c, windowFont, 6, "fixed" );
+
+	v[2] = windowFont;
+
+	activeFontContext = xcb_generate_id( c );
+	v[0] = blackPixel;
+	v[1] = lightGreyPixel;
+	xcb_create_gc( c, activeFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
+
+	inactiveFontContext = xcb_generate_id( c );
+	v[0] = darkGreyPixel;
+	v[1] = whitePixel;
+	xcb_create_gc( c, inactiveFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
+}
+
 void SetRootBackground() {
 	xcb_pixmap_t pixmap = xcb_generate_id( c );
 	unsigned int v[1] = { pixmap };
@@ -483,7 +562,9 @@ int main() {
 	}
 
 	colormap = screen->default_colormap;
+	SetupAtoms();
 	SetupColors();
+	SetupFonts();
 	SetRootBackground();
 
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
@@ -515,6 +596,9 @@ int main() {
 				break;
 			case XCB_MOTION_NOTIFY:
 				DoMotionNotify( (xcb_motion_notify_event_t *)e );
+				break;
+			case XCB_PROPERTY_NOTIFY:
+				DoPropertyNotify( (xcb_property_notify_event_t *)e );
 				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
