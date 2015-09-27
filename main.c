@@ -8,7 +8,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "19"
+#define VERSION_BUILDSTR "20"
 
 #define MAX_CLIENTS 1024
 
@@ -465,11 +465,26 @@ void SetupColors() {
 	xcb_create_gc( c, lightAccentContext, screen->root, XCB_GC_FOREGROUND, v );
 }
 
+void SetRootBackground() {
+	xcb_pixmap_t pixmap = xcb_generate_id( c );
+	unsigned int v[1] = { pixmap };
+	xcb_point_t lightPoints[2] = {{0,0},{1,1}};
+	xcb_point_t darkPoints[2] = {{0,1},{1,0}};
+
+	xcb_create_pixmap( c, screen->root_depth, pixmap, screen->root, 2, 2 );
+	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, lightGreyContext, 2, lightPoints );
+	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, darkGreyContext, 2, darkPoints );
+	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
+	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels - 1, screen->height_in_pixels - 1 );
+
+	xcb_flush( c );
+}
+
 int main() {
 	signal( SIGTERM, Quit );
 	signal( SIGINT, Quit );
 
-	printf( "%s %s, build %s\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
+	printf( "%s %s, build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
 
 	c = xcb_connect( NULL, NULL );
 	if ( xcb_connection_has_error( c ) ) {
@@ -487,7 +502,8 @@ int main() {
 	}
 
 	colormap = screen->default_colormap;
-	SetupColors();	
+	SetupColors();
+	SetRootBackground();
 
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
 		
