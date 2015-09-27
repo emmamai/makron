@@ -8,7 +8,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "16"
+#define VERSION_BUILDSTR "19"
 
 #define MAX_CLIENTS 1024
 
@@ -57,13 +57,30 @@ xcb_connection_t *c;
 xcb_screen_t *screen;
 xcb_generic_event_t *e;
 xcb_colormap_t colormap;
-unsigned int greyPixel;
+unsigned int whitePixel;
+unsigned int lightGreyPixel;
+unsigned int darkGreyPixel;
+unsigned int blackPixel;
+unsigned int darkAccentPixel;
+unsigned int accentPixel;
+unsigned int lightAccentPixel;
+
+unsigned int whiteContext;
+unsigned int lightGreyContext;
+unsigned int darkGreyContext;
+unsigned int blackContext;
+unsigned int darkAccentContext;
+unsigned int accentContext;
+unsigned int lightAccentContext;
+
+
 
 wmState_t wmState = WMSTATE_IDLE;
 client_t *dragClient;
 short dragStartX;
 short dragStartY;
 
+xcb_window_t activeWindow = NULL;
 
 void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
 	unsigned short pmask = 	XCB_CONFIG_WINDOW_X |
@@ -115,8 +132,81 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 	xcb_flush( c );
 }
 
+void DrawFrame( client_t *n ) {
+	xcb_rectangle_t borderRect[1];
+	xcb_segment_t topBorderSegment[1];
+
+	borderRect[0].x = 0;
+	borderRect[0].y = 0;
+	borderRect[0].width = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1;  
+	borderRect[0].height = n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1;
+
+	topBorderSegment[0].x1 = 1;
+	topBorderSegment[0].y1 = BORDER_SIZE_TOP - 1;
+	topBorderSegment[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
+	topBorderSegment[0].y2 = BORDER_SIZE_TOP - 1;
+
+	if ( n->parent == activeWindow ) {
+		printf("Repainting active window\n");
+		xcb_poly_fill_rectangle( c, n->parent, lightGreyContext, 1, borderRect );
+		xcb_poly_rectangle( c, n->parent, blackContext, 1, borderRect );
+		xcb_poly_segment( c, n->parent, blackContext, 1, topBorderSegment );
+	} else {
+		printf("Repainting non-active window\n");
+		xcb_poly_fill_rectangle( c, n->parent, whiteContext, 1, borderRect );
+		xcb_poly_rectangle( c, n->parent, darkGreyContext, 1, borderRect );
+		xcb_poly_segment( c, n->parent, darkGreyContext, 1, topBorderSegment );
+	}
+	
+	xcb_flush( c );
+	return;
+}
+
+client_t *GetClientByWindow( xcb_window_t w ) {
+	client_t *n = firstClient;
+
+	for ( ; n != NULL; n = n->nextClient ) {
+		if ( n->window == w ) {
+			return n;
+		}
+	}
+	return NULL;
+}
+
+client_t *GetClientByParent( xcb_window_t w ) {
+	client_t *n = firstClient;
+
+	for ( ; n != NULL; n = n->nextClient ) {
+		if ( n->parent == w ) {
+			return n;
+		}
+	}
+	return NULL;
+}
+
+void RaiseClient( client_t *n ) {
+	unsigned short mask = XCB_CONFIG_WINDOW_STACK_MODE;
+	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
+	client_t *m = GetClientByParent( activeWindow );
+
+	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
+	activeWindow = n->parent;
+	DrawFrame( n );
+	if( m != NULL ) {
+		DrawFrame( m );
+	}
+	if ( n->managementState == STATE_NO_REDIRECT ) { //this might not be necessary
+		xcb_configure_window( c, n->window, mask, v );
+
+	} else {
+		xcb_configure_window( c, n->parent, mask, v );
+	}
+
+	xcb_flush( c );
+}
+
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	unsigned int v[2] = { 	greyPixel, 
+	unsigned int v[2] = { 	whitePixel, 
 							XCB_EVENT_MASK_EXPOSURE | 
 							XCB_EVENT_MASK_BUTTON_PRESS | 
 							XCB_EVENT_MASK_BUTTON_RELEASE | 
@@ -164,7 +254,7 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
 							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
 							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
-	
+
 	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
 	xcb_flush( c );
 }
@@ -197,6 +287,7 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 			xcb_map_window( c, n->parent );
 			xcb_map_window( c, n->window );
 			xcb_flush( c );
+			RaiseClient( n );
 			printf( "window %x mapped\n", e->window );
 			return;
 		}
@@ -216,7 +307,15 @@ void DoConfigureRequest( xcb_configure_request_event_t *e ) {
 }
 
 void DoExpose( xcb_expose_event_t *e ) {
-	printf( "window %x exposed\n", e->window );
+	client_t *n = firstClient;
+
+	printf( "expose window %x, activeWindow is %x\n", e->window, activeWindow );
+
+	for ( ; n != NULL; n = n->nextClient ) {
+		if ( n->parent == e->window ) {
+			DrawFrame( n );
+		}
+	}
 }
 
 void DoDestroy( xcb_destroy_notify_event_t *e ) {
@@ -228,9 +327,12 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 	for ( ; n != NULL; m = n, n = n->nextClient ) {
 		if ( n->window == e->window ) {
 			m->nextClient = n->nextClient;
+			if ( activeWindow == n->parent ) {
+				activeWindow = 0;
+			}
 			xcb_destroy_window( c, n->parent );
 			if( firstClient == n ) {
-				firstClient = NULL;
+				firstClient = n->nextClient;
 			}
 			free( n );
 			n = NULL;
@@ -246,6 +348,7 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 	for ( ; n != NULL; n = n->nextClient ) {
 		if ( n->parent == e->event ) {
 			printf( "Window drag at (%d,%d)local, (%d,%d)root in window %x\n", e->event_x, e->event_y, e->root_x, e->root_y, e->event );
+			RaiseClient( n );
 			dragClient = n;
 			wmState = WMSTATE_DRAG;
 			dragStartX = e->event_x;
@@ -308,10 +411,58 @@ void Quit( int r ) {
 
 void SetupColors() {
 	xcb_alloc_color_reply_t *reply;
+	unsigned int v[1];
 
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 65535, 0, 0 ), NULL );
-	greyPixel = reply->pixel;
+	whitePixel = screen->white_pixel;
+	blackPixel = screen->black_pixel;
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 62208, 62208, 62208 ), NULL );
+	lightGreyPixel = reply->pixel;
 	free( reply );
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 49152, 49152, 49152 ), NULL );
+	darkGreyPixel = reply->pixel;
+	free( reply );
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 45824, 45824, 55808 ), NULL );
+	accentPixel = reply->pixel;
+	free( reply );
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 55808, 55808, 65535 ), NULL );
+	lightAccentPixel = reply->pixel;
+	free( reply );
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 21504, 21504, 34560 ), NULL );
+	darkAccentPixel = reply->pixel;
+	free( reply );
+
+	blackContext = xcb_generate_id( c );
+	v[0] = blackPixel;
+	xcb_create_gc( c, blackContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	darkGreyContext = xcb_generate_id( c );
+	v[0] = darkGreyPixel;
+	xcb_create_gc( c, darkGreyContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	lightGreyContext = xcb_generate_id( c );
+	v[0] = lightGreyPixel;
+	xcb_create_gc( c, lightGreyContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	whiteContext = xcb_generate_id( c );
+	v[0] = whitePixel;
+	xcb_create_gc( c, whiteContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	darkAccentContext = xcb_generate_id( c );
+	v[0] = darkAccentPixel;
+	xcb_create_gc( c, darkAccentContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	accentContext = xcb_generate_id( c );
+	v[0] = accentPixel;
+	xcb_create_gc( c, accentContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	lightAccentContext = xcb_generate_id( c );
+	v[0] = lightAccentPixel;
+	xcb_create_gc( c, lightAccentContext, screen->root, XCB_GC_FOREGROUND, v );
 }
 
 int main() {
