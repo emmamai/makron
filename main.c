@@ -9,7 +9,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "22"
+#define VERSION_BUILDSTR "23"
 
 #define MAX_CLIENTS 1024
 
@@ -88,9 +88,14 @@ short dragStartY;
 
 xcb_window_t activeWindow = NULL;
 
-
+/*
+=================
+Support functions
+=================
+*/
 
 void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
+	int nx, ny;
 	unsigned short pmask = 	XCB_CONFIG_WINDOW_X |
 							XCB_CONFIG_WINDOW_Y |
 							XCB_CONFIG_WINDOW_WIDTH |
@@ -106,35 +111,33 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 		return;
 	}
 
-	n->x = x;
-	n->y = y;
-	n->width = width;
-	n->height = height;
+	nx = x;
+	ny = y;
 
-	i = ( n->width + n->x );
+	i = ( width + nx );
 	if ( i > screen->width_in_pixels ) {
-		n->x -= i - screen->width_in_pixels;
+		nx -= i - screen->width_in_pixels;
 	}
-	i = ( n->height + n->y );
+	i = ( height + ny );
 	if ( i > screen->height_in_pixels ) {
-		n->y -= i - screen->height_in_pixels;
+		ny -= i - screen->height_in_pixels;
 	}
-	if ( n->x < 0 ) {
-		n->x = 0;
+	if ( nx < 0 ) {
+		nx = 0;
 	}
-	if ( n->y < 0 ) {
-		n->y = 0;
+	if ( ny < 0 ) {
+		ny = 0;
 	}
 	unsigned int pv[5] = {
-		n->x, 
-		n->y, 
-		n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT, 
-		n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM, 
+		nx, 
+		ny, 
+		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT, 
+		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM, 
 		0
 	};
 	unsigned int cv[3] = {
-		n->width, 
-		n->height, 
+		width, 
+		height, 
 		0
 	};
 	
@@ -147,6 +150,8 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 void DrawFrame( client_t *n ) {
 	xcb_rectangle_t borderRect[1];
 	xcb_segment_t topBorderSegment[1];
+	xcb_segment_t titleAccent[2];
+	xcb_segment_t titleAccentShadow[2];
 	int textLen = 0;
 	int textWidth = 0;
 	int textPos = 0;
@@ -167,10 +172,28 @@ void DrawFrame( client_t *n ) {
 	topBorderSegment[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
 	topBorderSegment[0].y2 = BORDER_SIZE_TOP - 1;
 
+	titleAccent[0].x1 = 1;
+	titleAccent[0].y1 = 1;
+	titleAccent[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
+	titleAccent[0].y2 = 1;
+	titleAccent[1].x1 = 1;
+	titleAccent[1].y1 = 1;
+	titleAccent[1].x2 = 1;  
+	titleAccent[1].y2 = BORDER_SIZE_TOP - 2;
+
+	titleAccentShadow[0].x1 = 1;
+	titleAccentShadow[0].y1 = BORDER_SIZE_TOP - 2;
+	titleAccentShadow[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
+	titleAccentShadow[0].y2 = BORDER_SIZE_TOP - 2;
+	titleAccentShadow[1].x1 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;
+	titleAccentShadow[1].y1 = 1;
+	titleAccentShadow[1].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
+	titleAccentShadow[1].y2 = BORDER_SIZE_TOP - 2;
+
 	textLen = strnlen( n->name, 256 );
 	s = malloc( textLen * sizeof( xcb_char2b_t ) );
 	for( int i = 0; i < textLen; i++ ) {
-		s[i].byte1 = NULL;
+		s[i].byte1 = 0;
 		s[i].byte2 = n->name[i];
 	}
 	r = xcb_query_text_extents_reply( c, xcb_query_text_extents( c, windowFont, textLen, s ), NULL );
@@ -178,16 +201,15 @@ void DrawFrame( client_t *n ) {
 	free( r ); 
 	free( s );
 	textPos = ( ( n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
-	printf( "text is %d pixels wide\n", textWidth );
 
 	if ( n->parent == activeWindow ) {
-		printf("Repainting active window\n");
 		xcb_poly_fill_rectangle( c, n->parent, lightGreyContext, 1, borderRect );
 		xcb_poly_rectangle( c, n->parent, blackContext, 1, borderRect );
 		xcb_poly_segment( c, n->parent, blackContext, 1, topBorderSegment );
+		xcb_poly_segment( c, n->parent, lightAccentContext, 2, titleAccent );
+		xcb_poly_segment( c, n->parent, accentContext, 2, titleAccentShadow );
 		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
 	} else {
-		printf("Repainting non-active window\n");
 		xcb_poly_fill_rectangle( c, n->parent, whiteContext, 1, borderRect );
 		xcb_poly_rectangle( c, n->parent, darkGreyContext, 1, borderRect );
 		xcb_poly_segment( c, n->parent, darkGreyContext, 1, topBorderSegment );
@@ -236,214 +258,6 @@ void RaiseClient( client_t *n ) {
 	}
 
 	xcb_flush( c );
-}
-
-void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	unsigned int v[2] = { 	whitePixel, 
-							XCB_EVENT_MASK_EXPOSURE | 
-							XCB_EVENT_MASK_BUTTON_PRESS | 
-							XCB_EVENT_MASK_BUTTON_RELEASE | 
-							XCB_EVENT_MASK_POINTER_MOTION | 
-							XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
-							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
-	client_t *m = firstClient;
-	client_t *n = firstClient;
-
-	if ( e->parent != screen->root ) {
-		return;
-	}
-
-	if ( n == NULL ) {
-		firstClient = n = malloc( sizeof( client_t ) );
-		n->nextClient = NULL;
-	} else {
-		while ( n != NULL ) {
-			if( e->window == n->window || e->window == n->parent ) {
-					printf( "New frame\n" );
-				return;
-			}
-			m = n;
-			n = m->nextClient;
-		}
-		m->nextClient = n = malloc( sizeof( client_t ) );
-		n->nextClient = NULL;
-	}
-	if ( e->override_redirect ) {
-		n->managementState = STATE_NO_REDIRECT;
-		n->window = e->window;
-		n->parent = screen->root;
-		printf( "New unreparented window\n" );
-		return;
-	}
-	n->window = e->window;
-	n->width = e->width;
-	n->height = e->height;
-	n->x = e->x;
-	n->y = e->y;
-	strncpy( n->name, "", 256 );
-
-	n->managementState = STATE_WITHDRAWN;
-
-	n->parent = xcb_generate_id( c );
-	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
-							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
-							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
-							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
-	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
-	v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
-	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
-	xcb_flush( c );
-}
-
-void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
-
-	if ( n == NULL ) {
-		return;
-	}
-
-	n->managementState = STATE_REPARENTED;
-	ConfigureClient( n, n->x, n->y, n->width, n->height );
-	printf( "window %x reparented to window %x\n", e->window, e->parent );
-	return;
-}
-
-void DoMapRequest( xcb_map_request_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
-
-	/* Todo:
-		Add ICCCM section 4.1.4 compatibility
-		https://tronche.com/gui/x/icccm/sec-4.html#s-4.1.3
-	*/
-	if ( n == NULL ) {
-		return;
-	}
-	n->windowState = STATE_NORMAL;
-	xcb_map_window( c, n->parent );
-	xcb_map_window( c, n->window );
-	xcb_flush( c );
-	RaiseClient( n );
-	printf( "window %x mapped\n", e->window );
-}
-
-void DoConfigureRequest( xcb_configure_request_event_t *e ) {
-	ConfigureClient( GetClientByWindow( e->window ), e->x, e->y, e->width, e->height );
-}
-
-void DoExpose( xcb_expose_event_t *e ) {
-	DrawFrame( GetClientByParent( e->window ) );
-}
-
-void DoDestroy( xcb_destroy_notify_event_t *e ) {
-	client_t *n = firstClient;
-	client_t *m = firstClient;
-
-	for ( ; n != NULL; m = n, n = n->nextClient ) {
-		if ( n->window == e->window ) {
-			m->nextClient = n->nextClient;
-			if ( activeWindow == n->parent ) {
-				activeWindow = 0;
-			}
-			xcb_destroy_window( c, n->parent );
-			if( firstClient == n ) {
-				firstClient = n->nextClient;
-			}
-			if( dragClient == n ) {
-				dragClient = NULL;
-			}
-			free( n );
-			n = NULL;
-			xcb_flush( c );
-			return;
-		}
-	}
-}
-
-void DoButtonPress( xcb_button_press_event_t *e ) {
-	client_t *n = GetClientByParent( e->event );
-	
-	if ( n == NULL ) {
-		return;
-	}
-	RaiseClient( n );
-	dragClient = n;
-	wmState = WMSTATE_DRAG;
-	dragStartX = e->event_x;
-	dragStartY = e->event_y;
-}
-
-void DoButtonRelease( xcb_button_release_event_t *e ) {
-	wmState = WMSTATE_IDLE;
-	dragClient = NULL;
-	dragStartX = 0;
-	dragStartY = 0;
-}
-
-void DoMotionNotify( xcb_motion_notify_event_t *e ) {
-	int x;
-	int y;
-	if ( wmState == WMSTATE_DRAG ) {
-		x = e->root_x - dragStartX;
-		y =  e->root_y - dragStartY;
-		ConfigureClient( dragClient, x, y, dragClient->width, dragClient->height );
-	}
-}
-
-void DoPropertyNotify( xcb_property_notify_event_t *e ) {
-	xcb_get_property_cookie_t cookie;
-    xcb_get_property_reply_t *reply;
-	client_t *n = GetClientByWindow( e->window );
-
-	if ( n == NULL ) {
-		return;
-	}
-
-	if ( e->atom == XCB_ATOM_WM_NAME ) {
-		cookie = xcb_get_property( c, 0, e->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 0, 256 );
-		if ((reply = xcb_get_property_reply(c, cookie, NULL))) {
-			int len = xcb_get_property_value_length(reply);
-			if ( len != 0 ) {
-				strncpy( n->name, (char*)xcb_get_property_value( reply ), 256 );
-				DrawFrame( n );
-			}
-		}	
-		free( reply );
-	} else {
-		//printf( "window %x updated unknown atom\n", e->window );
-	}
-}
-
-int BecomeWM(  ) {
-	unsigned int v[1];
-	xcb_void_cookie_t cookie;
-	xcb_generic_error_t *error;
-
-	v[0] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
-	cookie = xcb_change_window_attributes_checked( c, screen->root, XCB_CW_EVENT_MASK, v );
-	error = xcb_request_check( c, cookie );
-	if ( error ) {
-		free( error );
- 		return -1;
-	}
-	return 0;
-}
-
-void Cleanup() {
-	client_t *m = firstClient;
-	client_t *n = firstClient;
-
-	while ( n != NULL ) {
-		m = n;
-		n = m->nextClient;
-		free( m );
-	}
-
-	xcb_disconnect( c );
-}
-
-void Quit( int r ) {
-	Cleanup();
-	exit( r );
 }
 
 void SetupColors() {
@@ -525,6 +339,39 @@ void SetupFonts() {
 	xcb_create_gc( c, inactiveFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
 }
 
+int BecomeWM(  ) {
+	unsigned int v[1];
+	xcb_void_cookie_t cookie;
+	xcb_generic_error_t *error;
+
+	v[0] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	cookie = xcb_change_window_attributes_checked( c, screen->root, XCB_CW_EVENT_MASK, v );
+	error = xcb_request_check( c, cookie );
+	if ( error ) {
+		free( error );
+ 		return -1;
+	}
+	return 0;
+} 
+
+void Cleanup() {
+	client_t *m = firstClient;
+	client_t *n = firstClient;
+
+	while ( n != NULL ) {
+		m = n;
+		n = m->nextClient;
+		free( m );
+	}
+
+	xcb_disconnect( c );
+}
+
+void Quit( int r ) {
+	Cleanup();
+	exit( r );
+}
+
 void SetRootBackground() {
 	xcb_pixmap_t pixmap = xcb_generate_id( c );
 	unsigned int v[1] = { pixmap };
@@ -538,6 +385,211 @@ void SetRootBackground() {
 	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels - 1, screen->height_in_pixels - 1 );
 
 	xcb_flush( c );
+}
+
+/*
+==============
+Event handlers
+==============
+*/
+
+void DoButtonPress( xcb_button_press_event_t *e ) {
+	client_t *n = GetClientByParent( e->event );
+
+	printf( "button press on window %x\n", e->event );
+	
+	if ( n == NULL ) {
+		n = GetClientByWindow( e->event );
+		printf( "is client window\n" );
+		if ( n == NULL ) {
+			return;
+		}	
+		RaiseClient( n );
+		return;
+	}
+	RaiseClient( n );
+	dragClient = n;
+	wmState = WMSTATE_DRAG;
+	dragStartX = e->event_x;
+	dragStartY = e->event_y;
+}
+
+void DoButtonRelease( xcb_button_release_event_t *e ) {
+	wmState = WMSTATE_IDLE;
+	dragClient = NULL;
+	dragStartX = 0;
+	dragStartY = 0;
+}
+
+void DoMotionNotify( xcb_motion_notify_event_t *e ) {
+	int x;
+	int y;
+	if ( wmState == WMSTATE_DRAG ) {
+		x = e->root_x - dragStartX;
+		y =  e->root_y - dragStartY;
+		ConfigureClient( dragClient, x, y, dragClient->width, dragClient->height );
+	}
+}
+
+void DoExpose( xcb_expose_event_t *e ) {
+	DrawFrame( GetClientByParent( e->window ) );
+}
+
+void DoCreateNotify( xcb_create_notify_event_t *e ) {
+	unsigned int v[2] = { 	whitePixel, 
+							XCB_EVENT_MASK_EXPOSURE | 
+							XCB_EVENT_MASK_BUTTON_PRESS | 
+							XCB_EVENT_MASK_BUTTON_RELEASE | 
+							XCB_EVENT_MASK_POINTER_MOTION | 
+							XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
+							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
+	client_t *m = firstClient;
+	client_t *n = firstClient;
+
+	if ( e->parent != screen->root ) {
+		return;
+	}
+
+	if ( n == NULL ) {
+		firstClient = n = malloc( sizeof( client_t ) );
+		n->nextClient = NULL;
+	} else {
+		while ( n != NULL ) {
+			if( e->window == n->window || e->window == n->parent ) {
+					printf( "New frame\n" );
+				return;
+			}
+			m = n;
+			n = m->nextClient;
+		}
+		m->nextClient = n = malloc( sizeof( client_t ) );
+		n->nextClient = NULL;
+	}
+	if ( e->override_redirect ) {
+		n->managementState = STATE_NO_REDIRECT;
+		n->window = e->window;
+		n->parent = screen->root;
+		printf( "New unreparented window\n" );
+		return;
+	}
+	n->window = e->window;
+	n->width = e->width;
+	n->height = e->height;
+	n->x = e->x;
+	n->y = e->y;
+	strncpy( n->name, "", 256 );
+
+	n->managementState = STATE_WITHDRAWN;
+
+	n->parent = xcb_generate_id( c );
+	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
+							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
+							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
+							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
+	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
+
+	v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_BUTTON_PRESS | 
+							XCB_EVENT_MASK_BUTTON_RELEASE | 
+							XCB_EVENT_MASK_POINTER_MOTION;
+	xcb_change_window_attributes( c, e->window, XCB_CW_EVENT_MASK, v );
+
+	xcb_flush( c );
+}
+
+void DoDestroy( xcb_destroy_notify_event_t *e ) {
+	client_t *n = firstClient;
+	client_t *m = firstClient;
+
+	for ( ; n != NULL; m = n, n = n->nextClient ) {
+		if ( n->window == e->window ) {
+			m->nextClient = n->nextClient;
+			if ( activeWindow == n->parent ) {
+				activeWindow = 0;
+			}
+			xcb_destroy_window( c, n->parent );
+			if( firstClient == n ) {
+				firstClient = n->nextClient;
+			}
+			if( dragClient == n ) {
+				dragClient = NULL;
+			}
+			free( n );
+			n = NULL;
+			xcb_flush( c );
+			return;
+		}
+	}
+}
+
+void DoMapRequest( xcb_map_request_event_t *e ) {
+	client_t *n = GetClientByWindow( e->window );
+
+	/* Todo:
+		Add ICCCM section 4.1.4 compatibility
+		https://tronche.com/gui/x/icccm/sec-4.html#s-4.1.3
+	*/
+	if ( n == NULL ) {
+		return;
+	}
+	n->windowState = STATE_NORMAL;
+	xcb_map_window( c, n->parent );
+	xcb_map_window( c, n->window );
+	xcb_flush( c );
+	RaiseClient( n );
+	printf( "window %x mapped\n", e->window );
+}
+
+void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
+	client_t *n = GetClientByWindow( e->window );
+
+	if ( n == NULL ) {
+		return;
+	}
+
+	n->managementState = STATE_REPARENTED;
+	ConfigureClient( n, n->x, n->y, n->width, n->height );
+	printf( "window %x reparented to window %x\n", e->window, e->parent );
+	return;
+}
+
+void DoConfigureRequest( xcb_configure_request_event_t *e ) {
+	ConfigureClient( GetClientByWindow( e->window ), e->x, e->y, e->width, e->height );
+}
+
+void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
+	client_t *n = GetClientByWindow( e->window );
+	
+	if ( n == NULL ) {
+		return;
+	}
+	n->x = e->x;
+	n->y = e->y;
+	n->width = e->width;
+	n->height = e->height;
+}
+
+void DoPropertyNotify( xcb_property_notify_event_t *e ) {
+	xcb_get_property_cookie_t cookie;
+    xcb_get_property_reply_t *reply;
+	client_t *n = GetClientByWindow( e->window );
+
+	if ( n == NULL ) {
+		return;
+	}
+
+	if ( e->atom == XCB_ATOM_WM_NAME ) {
+		cookie = xcb_get_property( c, 0, e->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 0, 256 );
+		if ((reply = xcb_get_property_reply(c, cookie, NULL))) {
+			int len = xcb_get_property_value_length(reply);
+			if ( len != 0 ) {
+				strncpy( n->name, (char*)xcb_get_property_value( reply ), 256 );
+				DrawFrame( n );
+			}
+		}	
+		free( reply );
+	} else {
+		//printf( "window %x updated unknown atom\n", e->window );
+	}
 }
 
 int main() {
@@ -570,24 +622,7 @@ int main() {
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
 		
 		switch( e->response_type & ~0x80 ) {
-			case XCB_CREATE_NOTIFY: 
-				DoCreateNotify( (xcb_create_notify_event_t *)e );
-				break;
-			case XCB_REPARENT_NOTIFY:
-				DoReparentNotify( (xcb_reparent_notify_event_t *)e );
-				break;
-			case XCB_MAP_REQUEST:
-				DoMapRequest( (xcb_map_request_event_t *)e );
-				break;
-			case XCB_CONFIGURE_REQUEST:
-				DoConfigureRequest( (xcb_configure_request_event_t *)e );
-				break;
-			case XCB_EXPOSE:
-				DoExpose( (xcb_expose_event_t *)e );
-				break;
-			case XCB_DESTROY_NOTIFY:
-				DoDestroy( (xcb_destroy_notify_event_t *)e );
-				break;
+
 			case XCB_BUTTON_PRESS:
 				DoButtonPress( (xcb_button_press_event_t *)e );
 				break;
@@ -596,6 +631,27 @@ int main() {
 				break;
 			case XCB_MOTION_NOTIFY:
 				DoMotionNotify( (xcb_motion_notify_event_t *)e );
+				break;
+			case XCB_EXPOSE:
+				DoExpose( (xcb_expose_event_t *)e );
+				break;
+			case XCB_CREATE_NOTIFY: 
+				DoCreateNotify( (xcb_create_notify_event_t *)e );
+				break;
+			case XCB_DESTROY_NOTIFY:
+				DoDestroy( (xcb_destroy_notify_event_t *)e );
+				break;
+			case XCB_MAP_REQUEST:
+				DoMapRequest( (xcb_map_request_event_t *)e );
+				break;
+			case XCB_REPARENT_NOTIFY:
+				DoReparentNotify( (xcb_reparent_notify_event_t *)e );
+				break;
+			case XCB_CONFIGURE_NOTIFY:
+				DoConfigureNotify( (xcb_configure_notify_event_t *)e );
+				break;
+			case XCB_CONFIGURE_REQUEST:
+				DoConfigureRequest( (xcb_configure_request_event_t *)e );
 				break;
 			case XCB_PROPERTY_NOTIFY:
 				DoPropertyNotify( (xcb_property_notify_event_t *)e );
