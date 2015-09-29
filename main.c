@@ -62,6 +62,7 @@ xcb_generic_event_t *e;
 xcb_colormap_t colormap;
 unsigned int whitePixel;
 unsigned int lightGreyPixel;
+unsigned int greyPixel;
 unsigned int darkGreyPixel;
 unsigned int blackPixel;
 unsigned int darkAccentPixel;
@@ -70,6 +71,7 @@ unsigned int lightAccentPixel;
 
 unsigned int whiteContext;
 unsigned int lightGreyContext;
+unsigned int greyContext;
 unsigned int darkGreyContext;
 unsigned int blackContext;
 unsigned int darkAccentContext;
@@ -271,8 +273,12 @@ void SetupColors() {
 	lightGreyPixel = reply->pixel;
 	free( reply );
 
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 49152, 49152, 49152 ), NULL );
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 32768, 32768, 32768 ), NULL );
 	darkGreyPixel = reply->pixel;
+	free( reply );
+
+	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 49152, 49152, 49152 ), NULL );
+	greyPixel = reply->pixel;
 	free( reply );
 
 	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 45824, 45824, 55808 ), NULL );
@@ -294,6 +300,10 @@ void SetupColors() {
 	darkGreyContext = xcb_generate_id( c );
 	v[0] = darkGreyPixel;
 	xcb_create_gc( c, darkGreyContext, screen->root, XCB_GC_FOREGROUND, v );
+
+	greyContext = xcb_generate_id( c );
+	v[0] = greyPixel;
+	xcb_create_gc( c, greyContext, screen->root, XCB_GC_FOREGROUND, v );
 
 	lightGreyContext = xcb_generate_id( c );
 	v[0] = lightGreyPixel;
@@ -379,7 +389,7 @@ void SetRootBackground() {
 	xcb_point_t darkPoints[2] = {{0,1},{1,0}};
 
 	xcb_create_pixmap( c, screen->root_depth, pixmap, screen->root, 2, 2 );
-	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, lightGreyContext, 2, lightPoints );
+	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, greyContext, 2, lightPoints );
 	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, darkGreyContext, 2, darkPoints );
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
 	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels - 1, screen->height_in_pixels - 1 );
