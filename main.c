@@ -9,7 +9,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "23"
+#define VERSION_BUILDSTR "24"
 
 #define MAX_CLIENTS 1024
 
@@ -17,6 +17,8 @@
 #define BORDER_SIZE_RIGHT 1
 #define BORDER_SIZE_TOP 19
 #define BORDER_SIZE_BOTTOM 1
+
+#define FONT_NAME "fixed"
 
 typedef enum {
 	STATE_WITHDRAWN = 0,
@@ -150,6 +152,9 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 }
 
 void DrawFrame( client_t *n ) {
+	xcb_rectangle_t closeRectDark[1];
+	xcb_rectangle_t closeRectLight[1];
+	xcb_rectangle_t closeRectGrey[1];
 	xcb_rectangle_t borderRect[1];
 	xcb_segment_t topBorderSegment[1];
 	xcb_segment_t titleAccent[2];
@@ -192,6 +197,21 @@ void DrawFrame( client_t *n ) {
 	titleAccentShadow[1].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
 	titleAccentShadow[1].y2 = BORDER_SIZE_TOP - 2;
 
+	closeRectDark[0].x = 9;
+	closeRectDark[0].y = 4;
+	closeRectDark[0].width = 11;  
+	closeRectDark[0].height = 11;
+
+	closeRectLight[0].x = 10;
+	closeRectLight[0].y = 5;
+	closeRectLight[0].width = 9;  
+	closeRectLight[0].height = 9;
+
+	closeRectGrey[0].x = 11;
+	closeRectGrey[0].y = 6;
+	closeRectGrey[0].width = 7;  
+	closeRectGrey[0].height = 7;
+
 	textLen = strnlen( n->name, 256 );
 	s = malloc( textLen * sizeof( xcb_char2b_t ) );
 	for( int i = 0; i < textLen; i++ ) {
@@ -205,11 +225,18 @@ void DrawFrame( client_t *n ) {
 	textPos = ( ( n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
 	if ( n->parent == activeWindow ) {
+
 		xcb_poly_fill_rectangle( c, n->parent, lightGreyContext, 1, borderRect );
 		xcb_poly_rectangle( c, n->parent, blackContext, 1, borderRect );
 		xcb_poly_segment( c, n->parent, blackContext, 1, topBorderSegment );
+
 		xcb_poly_segment( c, n->parent, lightAccentContext, 2, titleAccent );
 		xcb_poly_segment( c, n->parent, accentContext, 2, titleAccentShadow );
+
+		xcb_poly_fill_rectangle( c, n->parent, darkAccentContext, 1, closeRectDark );
+		xcb_poly_rectangle( c, n->parent, lightAccentContext, 1, closeRectLight );
+		xcb_poly_fill_rectangle( c, n->parent, greyContext, 1, closeRectGrey );
+
 		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
 	} else {
 		xcb_poly_fill_rectangle( c, n->parent, whiteContext, 1, borderRect );
@@ -334,7 +361,7 @@ void SetupFonts() {
 	unsigned int v[3];
 
 	windowFont = xcb_generate_id( c );
-	xcb_open_font( c, windowFont, 6, "fixed" );
+	xcb_open_font( c, windowFont, strnlen( FONT_NAME, 256 ), FONT_NAME );
 
 	v[2] = windowFont;
 
