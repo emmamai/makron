@@ -683,7 +683,7 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 		if ((reply = xcb_get_property_reply(c, cookie, NULL))) {
 			int len = xcb_get_property_value_length(reply);
 			if ( len != 0 ) {
-				strncpy( n->name, (char*)xcb_get_property_value( reply ), 256 );
+				strncpy( n->name, (char*)xcb_get_property_value( reply ), len > 255 ? 255 : len );
 				DrawFrame( n );
 			}
 		}	
