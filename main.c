@@ -9,7 +9,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "24"
+#define VERSION_BUILDSTR "26"
 
 #define MAX_CLIENTS 1024
 
@@ -625,6 +625,7 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 	}
 	if ( n->parentMapped == 0 ) {  
 		n->windowState = STATE_NORMAL;
+		n->parentMapped = 1;
 		xcb_map_window( c, n->parent );
 		xcb_flush( c );
 		RaiseClient( n );
