@@ -396,11 +396,12 @@ void Cleanup() {
 	client_t *n = firstClient;
 
 	while ( n != NULL ) {
+		xcb_reparent_window( c, n->window, screen->root, n->x, n->y );
 		m = n;
 		n = m->nextClient;
 		free( m );
 	}
-
+	xcb_flush( c );
 	xcb_disconnect( c );
 }
 
@@ -597,6 +598,14 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 	client_t *n = GetClientByWindow( e->window );
 	
 	if ( n == NULL ) {
+		client_t *n = GetClientByParent( e->window );
+		if ( n == NULL ) {
+			return;
+		}
+		n->x = e->x;
+		n->y = e->y;
+		n->width = e->width - ( BORDER_SIZE_LEFT - BORDER_SIZE_RIGHT );
+		n->height = e->height - ( BORDER_SIZE_TOP - BORDER_SIZE_BOTTOM );
 		return;
 	}
 	n->x = e->x;
@@ -628,6 +637,12 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 		//printf( "window %x updated unknown atom\n", e->window );
 	}
 }
+
+/*
+=============
+Main function
+=============
+*/
 
 int main() {
 	signal( SIGTERM, Quit );
