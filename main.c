@@ -42,6 +42,8 @@ typedef struct client_s {
 	xcb_window_t window;
 	xcb_window_t parent;
 
+	char parentMapped;
+
 	short width;
 	short height;
 	short x;
@@ -425,6 +427,95 @@ void SetRootBackground() {
 	xcb_flush( c );
 }
 
+void ReparentWindow( xcb_window_t win, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
+	unsigned int v[2] = { 	whitePixel, 
+							XCB_EVENT_MASK_EXPOSURE | 
+							XCB_EVENT_MASK_BUTTON_PRESS | 
+							XCB_EVENT_MASK_BUTTON_RELEASE | 
+							XCB_EVENT_MASK_POINTER_MOTION | 
+							XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
+							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
+	client_t *m = firstClient;
+	client_t *n = firstClient;
+
+	//if ( parent != screen->root ) {
+	//	return;
+	//}
+
+	if ( n == NULL ) {
+		firstClient = n = malloc( sizeof( client_t ) );
+		n->nextClient = NULL;
+	} else {
+		while ( n != NULL ) {
+			if( win == n->window || win == n->parent ) {
+					printf( "New frame\n" );
+				return;
+			}
+			m = n;
+			n = m->nextClient;
+		}
+		m->nextClient = n = malloc( sizeof( client_t ) );
+		n->nextClient = NULL;
+	}
+	if ( override_redirect ) {
+		n->managementState = STATE_NO_REDIRECT;
+		n->window = win;
+		n->parent = screen->root;
+		printf( "New unreparented window\n" );
+		return;
+	}
+
+	n->window = win;
+	n->width = width;
+	n->height = height;
+	n->x = x;
+	n->y = y;
+	n->parentMapped = 0;
+
+	strncpy( n->name, "", 256 );
+
+	n->managementState = STATE_WITHDRAWN;
+
+	n->parent = xcb_generate_id( c );
+	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
+							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
+							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
+							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
+	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
+
+	v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_BUTTON_PRESS | 
+							XCB_EVENT_MASK_BUTTON_RELEASE | 
+							XCB_EVENT_MASK_POINTER_MOTION;
+	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
+
+	xcb_flush( c );
+}
+
+void ReparentExistingWindows() {
+	xcb_query_tree_cookie_t treecookie;
+	xcb_query_tree_reply_t *treereply;
+	xcb_get_geometry_cookie_t geocookie;
+	xcb_get_geometry_reply_t *georeply;
+	int i;
+	xcb_window_t *children;
+
+	treecookie = xcb_query_tree( c, screen->root );
+	treereply = xcb_query_tree_reply( c, treecookie, NULL );
+	if ( treereply == NULL ) {
+		return;
+	}
+	children = xcb_query_tree_children( treereply );
+	for( i = 0; i < xcb_query_tree_children_length( treereply ); i++ ) {
+		geocookie = xcb_get_geometry( c, children[i] );
+		georeply = xcb_get_geometry_reply( c, geocookie, NULL );
+		if ( georeply != NULL ) {
+			ReparentWindow( children[i], georeply->x, georeply->y, georeply->width, georeply->height, 0 );
+			free( georeply );
+		}
+	}
+	free( treereply );
+}
+
 /*
 ==============
 Event handlers
@@ -474,64 +565,10 @@ void DoExpose( xcb_expose_event_t *e ) {
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	unsigned int v[2] = { 	whitePixel, 
-							XCB_EVENT_MASK_EXPOSURE | 
-							XCB_EVENT_MASK_BUTTON_PRESS | 
-							XCB_EVENT_MASK_BUTTON_RELEASE | 
-							XCB_EVENT_MASK_POINTER_MOTION | 
-							XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
-							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
-	client_t *m = firstClient;
-	client_t *n = firstClient;
-
 	if ( e->parent != screen->root ) {
 		return;
 	}
-
-	if ( n == NULL ) {
-		firstClient = n = malloc( sizeof( client_t ) );
-		n->nextClient = NULL;
-	} else {
-		while ( n != NULL ) {
-			if( e->window == n->window || e->window == n->parent ) {
-					printf( "New frame\n" );
-				return;
-			}
-			m = n;
-			n = m->nextClient;
-		}
-		m->nextClient = n = malloc( sizeof( client_t ) );
-		n->nextClient = NULL;
-	}
-	if ( e->override_redirect ) {
-		n->managementState = STATE_NO_REDIRECT;
-		n->window = e->window;
-		n->parent = screen->root;
-		printf( "New unreparented window\n" );
-		return;
-	}
-	n->window = e->window;
-	n->width = e->width;
-	n->height = e->height;
-	n->x = e->x;
-	n->y = e->y;
-	strncpy( n->name, "", 256 );
-
-	n->managementState = STATE_WITHDRAWN;
-
-	n->parent = xcb_generate_id( c );
-	xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
-							0, 0, BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
-							0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
-							XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
-	xcb_reparent_window( c, n->window, n->parent, 1, 19 );
-
-	v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_BUTTON_PRESS | 
-							XCB_EVENT_MASK_BUTTON_RELEASE | 
-							XCB_EVENT_MASK_POINTER_MOTION;
-	xcb_change_window_attributes( c, e->window, XCB_CW_EVENT_MASK, v );
-
-	xcb_flush( c );
+	ReparentWindow( e->window, e->x, e->y, e->width, e->height, e->override_redirect );
 }
 
 void DoDestroy( xcb_destroy_notify_event_t *e ) {
@@ -577,6 +614,23 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 	printf( "window %x mapped\n", e->window );
 }
 
+//This is all a hack to make ReparentExistingWindows work.
+//It relies on the fact that X will unmap then remap windows on reparent,
+//if and only if they are already mapped
+void DoMapNotify( xcb_map_notify_event_t *e ) {
+	client_t *n = GetClientByWindow( e->window );
+
+	if ( n == NULL ) {
+		return;
+	}
+	if ( n->parentMapped == 0 ) {  
+		n->windowState = STATE_NORMAL;
+		xcb_map_window( c, n->parent );
+		xcb_flush( c );
+		RaiseClient( n );
+	}
+}
+
 void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 	client_t *n = GetClientByWindow( e->window );
 
@@ -604,8 +658,8 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 		}
 		n->x = e->x;
 		n->y = e->y;
-		n->width = e->width - ( BORDER_SIZE_LEFT - BORDER_SIZE_RIGHT );
-		n->height = e->height - ( BORDER_SIZE_TOP - BORDER_SIZE_BOTTOM );
+		n->width = e->width - ( BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT );
+		n->height = e->height - ( BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM );
 		return;
 	}
 	n->x = e->x;
@@ -670,6 +724,7 @@ int main() {
 	SetupColors();
 	SetupFonts();
 	SetRootBackground();
+	ReparentExistingWindows();
 
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
 		
@@ -693,6 +748,8 @@ int main() {
 			case XCB_DESTROY_NOTIFY:
 				DoDestroy( (xcb_destroy_notify_event_t *)e );
 				break;
+			case XCB_MAP_NOTIFY:
+				DoMapNotify( (xcb_map_notify_event_t *)e );
 			case XCB_MAP_REQUEST:
 				DoMapRequest( (xcb_map_request_event_t *)e );
 				break;
