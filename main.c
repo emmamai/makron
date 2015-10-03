@@ -9,7 +9,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "26"
+#define VERSION_BUILDSTR "27"
 
 #define MAX_CLIENTS 1024
 
@@ -434,7 +434,7 @@ void SetRootBackground() {
 	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, greyContext, 2, lightPoints );
 	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, darkGreyContext, 2, darkPoints );
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
-	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels - 1, screen->height_in_pixels - 1 );
+	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels, screen->height_in_pixels );
 
 	xcb_flush( c );
 }
