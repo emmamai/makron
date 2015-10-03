@@ -35,7 +35,8 @@ typedef enum {
 
 typedef enum {
 	WMSTATE_IDLE,
-	WMSTATE_DRAG
+	WMSTATE_DRAG,
+	WMSTATE_CLOSE
 } wmState_t;
 
 typedef struct client_s {
@@ -91,6 +92,9 @@ wmState_t wmState = WMSTATE_IDLE;
 client_t *dragClient;
 short dragStartX;
 short dragStartY;
+short mouseLastKnownX;
+short mouseLastKnownY;
+short mouseIsOverCloseButton;
 
 xcb_window_t activeWindow = NULL;
 
@@ -236,8 +240,13 @@ void DrawFrame( client_t *n ) {
 		xcb_poly_segment( c, n->parent, accentContext, 2, titleAccentShadow );
 
 		xcb_poly_fill_rectangle( c, n->parent, darkAccentContext, 1, closeRectDark );
-		xcb_poly_rectangle( c, n->parent, lightAccentContext, 1, closeRectLight );
-		xcb_poly_fill_rectangle( c, n->parent, greyContext, 1, closeRectGrey );
+		if ( wmState == WMSTATE_CLOSE && mouseIsOverCloseButton ) {
+
+		} else {
+			xcb_poly_rectangle( c, n->parent, lightAccentContext, 1, closeRectLight );
+			xcb_poly_fill_rectangle( c, n->parent, greyContext, 1, closeRectGrey );
+		}
+		
 
 		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
 	} else {
@@ -280,6 +289,7 @@ void RaiseClient( client_t *n ) {
 
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
 	activeWindow = n->parent;
+
 	DrawFrame( n );
 	DrawFrame( m ); //Yes, m could be null. DrawFrame() handles this case.
 	if ( n->managementState == STATE_NO_REDIRECT ) { //this might not be necessary
@@ -398,12 +408,14 @@ void Cleanup() {
 	client_t *n = firstClient;
 
 	while ( n != NULL ) {
+		printf( "unparenting %x\n", n->window );
 		xcb_reparent_window( c, n->window, screen->root, n->x, n->y );
+		xcb_destroy_window( c, n->parent );
+		xcb_flush( c );
 		m = n;
 		n = m->nextClient;
 		free( m );
 	}
-	xcb_flush( c );
 	xcb_disconnect( c );
 }
 
@@ -536,6 +548,15 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 		RaiseClient( n );
 		return;
 	}
+	if ( n->parent == activeWindow ) {
+		// (9,4) (20,15)
+		if ( mouseIsOverCloseButton ) {
+			wmState = WMSTATE_CLOSE;
+			printf("Close clicked!\n");
+			DrawFrame( n );
+			return;
+		}
+	}
 	RaiseClient( n );
 	dragClient = n;
 	wmState = WMSTATE_DRAG;
@@ -544,15 +565,46 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 }
 
 void DoButtonRelease( xcb_button_release_event_t *e ) {
-	wmState = WMSTATE_IDLE;
-	dragClient = NULL;
-	dragStartX = 0;
-	dragStartY = 0;
+	switch ( wmState ) {
+		case WMSTATE_IDLE:
+			break;
+		case WMSTATE_DRAG:
+			wmState = WMSTATE_IDLE;
+			dragClient = NULL;
+			dragStartX = 0;
+			dragStartY = 0;
+			break;
+		case WMSTATE_CLOSE:
+			if ( mouseIsOverCloseButton == 1 ) {
+				printf( "Close window now!\n" );
+			}
+			wmState = WMSTATE_IDLE;
+			DrawFrame( GetClientByParent( activeWindow ) );
+			break;
+		default:
+			wmState = WMSTATE_IDLE;
+			break;
+	}
 }
 
 void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	int x;
 	int y;
+
+	mouseLastKnownX = e->root_x;
+	mouseLastKnownY = e->root_y;
+
+	mouseIsOverCloseButton = 0;
+	if ( e->event_x >= 9 && e->event_x <= 20 ) {
+		if ( e->event_y >= 4 && e->event_y <= 15 ) {
+			mouseIsOverCloseButton = 1;
+		}
+	}
+
+	if ( wmState == WMSTATE_CLOSE ) {
+		DrawFrame( GetClientByParent( activeWindow ) );
+	}
+
 	if ( wmState == WMSTATE_DRAG ) {
 		x = e->root_x - dragStartX;
 		y =  e->root_y - dragStartY;
