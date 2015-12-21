@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <string.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_atom.h>
 
 #define PROGRAM_NAME "makron"
 
@@ -65,6 +66,7 @@ xcb_connection_t *c;
 xcb_screen_t *screen;
 xcb_generic_event_t *e;
 xcb_colormap_t colormap;
+
 unsigned int whitePixel;
 unsigned int lightGreyPixel;
 unsigned int greyPixel;
@@ -87,6 +89,9 @@ unsigned int inactiveFontContext;
 unsigned int activeFontContext;
 
 xcb_font_t windowFont;
+
+xcb_atom_t WM_DELETE_WINDOW;
+xcb_atom_t WM_PROTOCOLS;
 
 wmState_t wmState = WMSTATE_IDLE;
 client_t *dragClient;
@@ -366,7 +371,8 @@ void SetupColors() {
 }
 
 void SetupAtoms() {	
-	//WM_NAME = xcb_intern_atom_reply( c, xcb_intern_atom( c, 0, strlen( "WM_NAME" ), "WM_NAME" ), NULL )->atom;
+	WM_DELETE_WINDOW = xcb_intern_atom_reply( c, xcb_intern_atom( c, 0, strlen( "WM_DELETE_WINDOW" ), "WM_DELETE_WINDOW" ), NULL )->atom;
+	WM_PROTOCOLS = xcb_intern_atom_reply( c, xcb_intern_atom( c, 0, strlen( "WM_PROTOCOLS" ), "WM_PROTOCOLS" ), NULL )->atom;
 }
 
 void SetupFonts() {
@@ -577,6 +583,19 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 		case WMSTATE_CLOSE:
 			if ( mouseIsOverCloseButton == 1 ) {
 				printf( "Close window now!\n" );
+
+				xcb_client_message_event_t *e = calloc(32, 1);
+				e->response_type = XCB_CLIENT_MESSAGE;
+				e->window = GetClientByParent( activeWindow )->window;
+				e->format = 32;
+				e->sequence = 0;
+				e->type = WM_PROTOCOLS;
+				e->data.data32[0] = WM_DELETE_WINDOW;
+				e->data.data32[1] = XCB_CURRENT_TIME;
+				xcb_send_event( c, 0, GetClientByParent( activeWindow )->window, XCB_EVENT_MASK_NO_EVENT, (char*)e );
+				
+				xcb_flush( c );
+				free( e );
 			}
 			wmState = WMSTATE_IDLE;
 			DrawFrame( GetClientByParent( activeWindow ) );
