@@ -10,7 +10,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "27"
+#define VERSION_BUILDSTR "29"
 
 #define MAX_CLIENTS 1024
 
@@ -101,7 +101,7 @@ short mouseLastKnownX;
 short mouseLastKnownY;
 short mouseIsOverCloseButton;
 
-xcb_window_t activeWindow = NULL;
+xcb_window_t activeWindow;
 
 /*
 =================
@@ -176,7 +176,7 @@ void DrawFrame( client_t *n ) {
 	xcb_query_text_extents_reply_t *r;
 	xcb_char2b_t *s;
 
-	if( n == NULL ) {
+	if( n == NULL || n->managementState == STATE_NO_REDIRECT ) {
 		return;
 	}
 
@@ -445,7 +445,7 @@ void SetRootBackground() {
 	xcb_flush( c );
 }
 
-void ReparentWindow( xcb_window_t win, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
+void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
 	unsigned int v[2] = { 	whitePixel, 
 							XCB_EVENT_MASK_EXPOSURE | 
 							XCB_EVENT_MASK_BUTTON_PRESS | 
@@ -455,10 +455,6 @@ void ReparentWindow( xcb_window_t win, short x, short y, unsigned short width, u
 							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
 	client_t *m = firstClient;
 	client_t *n = firstClient;
-
-	//if ( parent != screen->root ) {
-	//	return;
-	//}
 
 	if ( n == NULL ) {
 		firstClient = n = malloc( sizeof( client_t ) );
@@ -475,11 +471,17 @@ void ReparentWindow( xcb_window_t win, short x, short y, unsigned short width, u
 		m->nextClient = n = malloc( sizeof( client_t ) );
 		n->nextClient = NULL;
 	}
-	if ( override_redirect ) {
+	if ( ( override_redirect ) || ( parent != screen->root ) ) {
 		n->managementState = STATE_NO_REDIRECT;
 		n->window = win;
 		n->parent = screen->root;
 		printf( "New unreparented window\n" );
+
+		v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_BUTTON_PRESS | 
+							XCB_EVENT_MASK_BUTTON_RELEASE | 
+							XCB_EVENT_MASK_POINTER_MOTION;
+		xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
+		xcb_flush( c );
 		return;
 	}
 
@@ -527,7 +529,7 @@ void ReparentExistingWindows() {
 		geocookie = xcb_get_geometry( c, children[i] );
 		georeply = xcb_get_geometry_reply( c, geocookie, NULL );
 		if ( georeply != NULL ) {
-			ReparentWindow( children[i], georeply->x, georeply->y, georeply->width, georeply->height, 0 );
+			ReparentWindow( children[i], screen->root, georeply->x, georeply->y, georeply->width, georeply->height, 0 );
 			free( georeply );
 		}
 	}
@@ -636,10 +638,10 @@ void DoExpose( xcb_expose_event_t *e ) {
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	if ( e->parent != screen->root ) {
+	/*if ( e->parent != screen->root ) {
 		return;
-	}
-	ReparentWindow( e->window, e->x, e->y, e->width, e->height, e->override_redirect );
+	}*/
+	ReparentWindow( e->window, e->parent, e->x, e->y, e->width, e->height, e->override_redirect );
 }
 
 void DoDestroy( xcb_destroy_notify_event_t *e ) {
