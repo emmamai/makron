@@ -1,10 +1,13 @@
-CFLAGS= -Wall -g
-DEFINES=
+CFLAGS ?= -Wall -g
+# xcb headers
+CFLAGS != pkgconf --cflags xcb
+
+LIBS != pkgconf --libs xcb
 
 all: makron
 
 makron: main.c
-	gcc -L./ -o makron main.c -lxcb $(CFLAGS)
+	gcc -o makron main.c $(LIBS) $(CFLAGS)
 
 clean:
 	rm makron
