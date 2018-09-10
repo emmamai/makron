@@ -744,7 +744,7 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 
 void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 	xcb_get_property_cookie_t cookie;
-    xcb_get_property_reply_t *reply;
+    	xcb_get_property_reply_t *reply;
 	client_t *n = GetClientByWindow( e->window );
 
 	if ( n == NULL ) {
@@ -756,6 +756,7 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 		if ((reply = xcb_get_property_reply(c, cookie, NULL))) {
 			int len = xcb_get_property_value_length(reply);
 			if ( len != 0 ) {
+				memset( n->name, '\0', 256 );
 				strncpy( n->name, (char*)xcb_get_property_value( reply ), len > 255 ? 255 : len );
 				DrawFrame( n );
 			}
