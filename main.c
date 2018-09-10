@@ -772,13 +772,32 @@ Main function
 =============
 */
 
-int main() {
+int main( int argc, char** argv ) {
+	char display[128] = ":0";
+	int i;
+
 	signal( SIGTERM, Quit );
 	signal( SIGINT, Quit );
 
+
 	printf( "%s %s, build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
 
-	c = xcb_connect( NULL, NULL );
+	for ( i = 1; i < argc; i++ ) {
+		if ( !strcmp( argv[i], "-display" ) ) {
+			if ( ++i < argc ) {
+				strncpy( display, argv[i], 127 );
+				continue;
+			} else {
+				fprintf( stderr, "error: -display requires argument\n" );
+				exit( 1 );
+			}
+		} else {
+			fprintf( stderr, "error: unknown argument '%s'\n", argv[i] );
+			exit( 1 );
+		}
+	}
+
+	c = xcb_connect( display, NULL );
 	if ( xcb_connection_has_error( c ) ) {
 			printf( "Uh oh! It looks like X isn't running.\n" );
 			printf( "You'll need to start it before you can run makron.\n" );
