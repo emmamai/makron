@@ -789,7 +789,7 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 		}	
 		free( reply );
 	} else {
-		//printf( "window %x updated unknown atom\n", e->window );
+		printf( "window %x updated unknown atom %s\n", e->window, xcb_get_atom_name_name( xcb_get_atom_name_reply( c, xcb_get_atom_name( c, e->atom ), NULL ) ) );
 	}
 }
 
