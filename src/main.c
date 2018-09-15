@@ -182,6 +182,7 @@ void DrawFrame( client_t *n ) {
 	xcb_segment_t topBorderSegment[1];
 	xcb_segment_t titleAccent[2];
 	xcb_segment_t titleAccentShadow[2];
+	xcb_segment_t pinstripeSegment[2];
 	int textLen = 0;
 	int textWidth = 0;
 	int textPos = 0;
