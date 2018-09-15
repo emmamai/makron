@@ -11,7 +11,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "33"
+#define VERSION_BUILDSTR "34"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -823,14 +823,19 @@ Main function
 */
 
 int main( int argc, char** argv ) {
-	char display[128] = ":0";
+	char* display;
 	int i;
 
 	signal( SIGTERM, Quit );
 	signal( SIGINT, Quit );
 
-
 	printf( "%s %s, build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
+
+	display = getenv( "DISPLAY" );
+	if ( display == NULL )
+		display = ":0";
+
+	printf( "starting on display %s\n", display );
 
 	for ( i = 1; i < argc; i++ ) {
 		if ( !strcmp( argv[i], "-display" ) ) {
