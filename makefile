@@ -1,13 +1,14 @@
 CFLAGS ?= -Wall -g
 # xcb headers
 CFLAGS != pkgconf --cflags xcb
+OUT := makron
 
 LIBS != pkgconf --libs xcb
 
-all: makron
+all: $(OUT)
 
-makron: main.c
-	gcc -o makron main.c $(LIBS) $(CFLAGS)
+$(OUT): src/*.c
+	$(CC) -o $(OUT) src/*.c $(LIBS) $(CFLAGS)
 
 clean:
-	rm makron
+	rm $(OUT)
