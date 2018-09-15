@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <stdarg.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_atom.h>
 
@@ -10,9 +11,7 @@
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "29"
-
-#define MAX_CLIENTS 1024
+#define VERSION_BUILDSTR "33"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -20,6 +19,8 @@
 #define BORDER_SIZE_BOTTOM 1
 
 #define FONT_NAME "fixed"
+
+#define DEBUGLEVEL 0
 
 typedef enum {
 	STATE_WITHDRAWN = 0,
@@ -67,6 +68,8 @@ xcb_screen_t *screen;
 xcb_generic_event_t *e;
 xcb_colormap_t colormap;
 
+int debugLevel = 1;
+
 unsigned int whitePixel;
 unsigned int lightGreyPixel;
 unsigned int greyPixel;
@@ -108,6 +111,15 @@ xcb_window_t activeWindow;
 Support functions
 =================
 */
+
+void dbgprintf( int level, char* fmt, ... ) {
+	va_list args;
+	va_start( args, fmt );
+	if ( level >= DEBUGLEVEL ) {
+		vprintf( fmt, args );
+	}
+	va_end( args );
+}
 
 void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
 	int nx, ny;
@@ -705,6 +717,20 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 	}
 }
 
+void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
+	client_t *n = GetClientByWindow( e->window );
+
+	if ( n == NULL ) {
+		return;
+	}
+	if ( n->parentMapped == 1 ) {
+		n->windowState = STATE_WITHDRAWN;
+		n->parentMapped = 0;
+		xcb_unmap_window( c, n->parent );
+		xcb_flush( c );
+	}
+}
+
 void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 	client_t *n = GetClientByWindow( e->window );
 
@@ -767,6 +793,29 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 	}
 }
 
+void DoClientMessage( xcb_client_message_event_t *e ) {
+	int i;
+	xcb_get_atom_name_cookie_t nameCookie;
+	xcb_get_atom_name_reply_t* nameReply;
+
+	nameCookie = xcb_get_atom_name( c, e->type );
+	nameReply = xcb_get_atom_name_reply( c, nameCookie, NULL );
+
+	printf( "received client message\n" );
+	printf( "format: %i\n", e->format );
+	printf( "type: %s\n", xcb_get_atom_name_name( nameReply ) );
+	if ( !strcmp( xcb_get_atom_name_name( nameReply ), "_NET_WM_STATE" ) ) {
+		printf( "message is _NET_WM_STATE\n" );
+		for ( i = 0; i < 3; i++ ) {
+			if ( e->data.data32[i] == 0 )
+				break;
+			nameCookie = xcb_get_atom_name( c, e->data.data32[i] );
+			nameReply = xcb_get_atom_name_reply( c, nameCookie, NULL );
+			printf( "data[i]: %s\n", xcb_get_atom_name_name( nameReply ) );
+		}
+	}
+}
+
 /*
 =============
 Main function
@@ -821,9 +870,7 @@ int main( int argc, char** argv ) {
 	ReparentExistingWindows();
 
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
-		
 		switch( e->response_type & ~0x80 ) {
-
 			case XCB_BUTTON_PRESS:
 				DoButtonPress( (xcb_button_press_event_t *)e );
 				break;
@@ -844,8 +891,12 @@ int main( int argc, char** argv ) {
 				break;
 			case XCB_MAP_NOTIFY:
 				DoMapNotify( (xcb_map_notify_event_t *)e );
+				break;
 			case XCB_MAP_REQUEST:
 				DoMapRequest( (xcb_map_request_event_t *)e );
+				break;
+			case XCB_UNMAP_NOTIFY:
+				DoUnmapNotify( (xcb_unmap_notify_event_t *)e );
 				break;
 			case XCB_REPARENT_NOTIFY:
 				DoReparentNotify( (xcb_reparent_notify_event_t *)e );
@@ -859,6 +910,9 @@ int main( int argc, char** argv ) {
 			case XCB_PROPERTY_NOTIFY:
 				DoPropertyNotify( (xcb_property_notify_event_t *)e );
 				break;
+			case XCB_CLIENT_MESSAGE:
+				DoClientMessage( (xcb_client_message_event_t *)e );
+				break;
 			default:
 				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
 				break;
@@ -867,5 +921,4 @@ int main( int argc, char** argv ) {
 	}
 	printf( "Looks like we're done here. See you next time!\n" );
 	Cleanup();
-	return 0;
-}
+	return 0;}
