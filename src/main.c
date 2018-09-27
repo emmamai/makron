@@ -334,14 +334,39 @@ void Quit( int r ) {
 }
 
 void SetRootBackground() {
+	int w = screen->width_in_pixels, h = screen->height_in_pixels;
+	xcb_pixmap_t fill = xcb_generate_id( c );
 	xcb_pixmap_t pixmap = xcb_generate_id( c );
 	unsigned int v[1] = { pixmap };
 
-	xcb_create_pixmap( c, screen->root_depth, pixmap, screen->root, 2, 2 );
-	SulfurDrawFill( pixmap, colorGrey, 0, 0, 2, 2 );
-	SulfurDrawLine( pixmap, colorDarkGrey, 0, 0, 1, 1 );
+	xcb_create_pixmap( c, screen->root_depth, fill, screen->root, 2, 2 );
+	xcb_create_pixmap( c, screen->root_depth, pixmap, screen->root, w, h );
+
+	SulfurDrawFill( pixmap, colorGrey, 0, 0, w, h );
+
+	SulfurDrawLine( pixmap, colorBlack, 0, 0, 0, 4 );
+	SulfurDrawLine( pixmap, colorBlack, 1, 0, 4, 0 );
+	SulfurDrawLine( pixmap, colorBlack, 1, 1, 1, 2 );
+	SulfurDrawLine( pixmap, colorBlack, 1, 1, 2, 1 );
+
+	SulfurDrawLine( pixmap, colorBlack, w - 1, 0, w - 5, 0 );
+	SulfurDrawLine( pixmap, colorBlack, w - 1, 0, w - 1, 4 );
+	SulfurDrawLine( pixmap, colorBlack, w - 2, 1, w - 2, 2 );
+	SulfurDrawLine( pixmap, colorBlack, w - 2, 1, w - 3, 1 );
+
+	SulfurDrawLine( pixmap, colorBlack, 0, h - 1, 0, h - 5 );
+	SulfurDrawLine( pixmap, colorBlack, 1, h - 1, 4, h - 1 );
+	SulfurDrawLine( pixmap, colorBlack, 1, h - 2, 1, h - 3 );
+	SulfurDrawLine( pixmap, colorBlack, 1, h - 2, 2, h - 2 );
+
+	SulfurDrawLine( pixmap, colorBlack, w - 1, h - 1, w - 5, h - 1 );
+	SulfurDrawLine( pixmap, colorBlack, w - 1, h - 1, w - 1, h - 5 );
+	SulfurDrawLine( pixmap, colorBlack, w - 2, h - 2, w - 2, h - 3 );
+	SulfurDrawLine( pixmap, colorBlack, w - 2, h - 2, w - 3, h - 2 );
+	
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
-	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels, screen->height_in_pixels );
+	xcb_clear_area( c, 1, screen->root, 0, 0, w, h );
+
 	xcb_flush( c );
 }
 
@@ -486,18 +511,18 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 			if ( mouseIsOverCloseButton == 1 ) {
 				printf( "Close window now!\n" );
 
-				xcb_client_message_event_t *e = calloc(32, 1);
-				e->response_type = XCB_CLIENT_MESSAGE;
-				e->window = GetClientByParent( activeWindow )->window;
-				e->format = 32;
-				e->sequence = 0;
-				e->type = WM_PROTOCOLS;
-				e->data.data32[0] = WM_DELETE_WINDOW;
-				e->data.data32[1] = XCB_CURRENT_TIME;
-				xcb_send_event( c, 0, GetClientByParent( activeWindow )->window, XCB_EVENT_MASK_NO_EVENT, (char*)e );
+				xcb_client_message_event_t *msg = calloc(32, 1);
+				msg->response_type = XCB_CLIENT_MESSAGE;
+				msg->window = GetClientByParent( activeWindow )->window;
+				msg->format = 32;
+				msg->sequence = 0;
+				msg->type = WM_PROTOCOLS;
+				msg->data.data32[0] = WM_DELETE_WINDOW;
+				msg->data.data32[1] = XCB_CURRENT_TIME;
+				xcb_send_event( c, 0, GetClientByParent( activeWindow )->window, XCB_EVENT_MASK_NO_EVENT, (char*)msg );
 				
 				xcb_flush( c );
-				free( e );
+				free( msg );
 			}
 			wmState = WMSTATE_IDLE;
 			DrawFrame( GetClientByParent( activeWindow ) );
@@ -535,6 +560,7 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 
 void DoExpose( xcb_expose_event_t *e ) {
 	DrawFrame( GetClientByParent( e->window ) );
+	SetRootBackground();
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
