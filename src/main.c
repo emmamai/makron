@@ -5,13 +5,14 @@
 #include <stdarg.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_atom.h>
+#include <sulfur/sulfur.h>
 
 #define PROGRAM_NAME "makron"
 
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_STRING "0.1"
-#define VERSION_BUILDSTR "34"
+#define VERSION_BUILDSTR "37"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -66,27 +67,17 @@ client_t *firstClient = NULL;
 xcb_connection_t *c;
 xcb_screen_t *screen;
 xcb_generic_event_t *e;
-xcb_colormap_t colormap;
 
 int debugLevel = 1;
 
-unsigned int whitePixel;
-unsigned int lightGreyPixel;
-unsigned int greyPixel;
-unsigned int darkGreyPixel;
-unsigned int blackPixel;
-unsigned int darkAccentPixel;
-unsigned int accentPixel;
-unsigned int lightAccentPixel;
-
-unsigned int whiteContext;
-unsigned int lightGreyContext;
-unsigned int greyContext;
-unsigned int darkGreyContext;
-unsigned int blackContext;
-unsigned int darkAccentContext;
-unsigned int accentContext;
-unsigned int lightAccentContext;
+sulfurColor_t colorWhite;
+sulfurColor_t colorLightGrey;
+sulfurColor_t colorGrey;
+sulfurColor_t colorDarkGrey;
+sulfurColor_t colorBlack;
+sulfurColor_t colorLightAccent;
+sulfurColor_t colorAccent;
+sulfurColor_t colorDarkAccent;
 
 unsigned int inactiveFontContext;
 unsigned int activeFontContext;
@@ -168,25 +159,9 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 		0
 	};
 	
-
 	xcb_configure_window( c, n->parent, pmask, pv );
 	xcb_configure_window( c, n->window, cmask, cv );
 	xcb_flush( c );
-}
-
-void DrawRect( client_t *n, int context, int x, int y, int w, int h ) {
-	xcb_rectangle_t rect[1] = {{ .x = x, .y = y, .width = w, .height = h }};
-	xcb_poly_rectangle( c, n->parent, context, 1, rect );
-}
-
-void DrawFill( client_t *n, int context, int x, int y, int w, int h ) {
-	xcb_rectangle_t rect[1] = {{ .x = x, .y = y, .width = w, .height = h }};
-	xcb_poly_fill_rectangle( c, n->parent, context, 1, rect );
-}
-
-void DrawLine( client_t *n, int context, int x1, int y1, int x2, int y2 ) {
-	xcb_segment_t segment[1] = {{ .x1 = x1, .y1 = y1, .x2 = x2, .y2 = y2 }};
-	xcb_poly_segment( c, n->parent, context, 1, segment );
 }
 
 void DrawFrame( client_t *n ) {
@@ -212,33 +187,33 @@ void DrawFrame( client_t *n ) {
 	textPos = ( ( n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
 	if ( n->parent == activeWindow ) {
-		DrawFill( n, lightGreyContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
-		DrawRect( n, blackContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SulfurDrawFill( n->parent, colorLightGrey, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SulfurDrawRect( n->parent, colorBlack, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
-		DrawLine( n, blackContext, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
+		SulfurDrawLine( n->parent, colorBlack, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
 
 		for ( i = 4; i < 16; i += 2 ) {
-			DrawLine( n, greyContext, 2, i, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 3, i );
+			SulfurDrawLine( n->parent, colorGrey, 2, i, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 3, i );
 		}
 
-		DrawLine( n, lightAccentContext, 1, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1 );
-		DrawLine( n, lightAccentContext, 1, 1, 1, BORDER_SIZE_TOP - 2 );
-		DrawLine( n, accentContext, 1, BORDER_SIZE_TOP - 2, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
-		DrawLine( n, accentContext, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+		SulfurDrawLine( n->parent, colorLightAccent, 1, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1 );
+		SulfurDrawLine( n->parent, colorLightAccent, 1, 1, 1, BORDER_SIZE_TOP - 2 );
+		SulfurDrawLine( n->parent, colorAccent, 1, BORDER_SIZE_TOP - 2, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+		SulfurDrawLine( n->parent, colorAccent, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
 
-		DrawRect( n, lightGreyContext, 8, 3, 12, 12 );
-		DrawFill( n, darkAccentContext, 9, 4, 11, 11 );
+		SulfurDrawRect( n->parent, colorLightGrey, 8, 3, 12, 12 );
+		SulfurDrawFill( n->parent, colorDarkAccent, 9, 4, 11, 11 );
 		if ( ! ( wmState == WMSTATE_CLOSE && mouseIsOverCloseButton ) ) {
-			DrawRect( n, lightAccentContext, 10, 5, 9, 9 );
-			DrawFill( n, greyContext, 11, 6, 7, 7 );
+			SulfurDrawRect( n->parent, colorLightAccent, 10, 5, 9, 9 );
+			SulfurDrawFill( n->parent, colorGrey, 11, 6, 7, 7 );
 		}
-		DrawFill( n, lightGreyContext, textPos - 8, 3, textWidth + 16, 12 );
+		SulfurDrawFill( n->parent, colorLightGrey, textPos - 8, 3, textWidth + 16, 12 );
 		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
 	} else {
-		DrawFill( n, lightGreyContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
-		DrawRect( n, blackContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SulfurDrawFill( n->parent, colorLightGrey, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SulfurDrawRect( n->parent, colorBlack, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
-		DrawLine( n, blackContext, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
+		SulfurDrawLine( n->parent, colorBlack, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
 		xcb_image_text_8( c, textLen, n->parent, inactiveFontContext, textPos, 14, n->name );
 	}
 	
@@ -288,67 +263,14 @@ void RaiseClient( client_t *n ) {
 }
 
 void SetupColors() {
-	xcb_alloc_color_reply_t *reply;
-	unsigned int v[1];
-
-	whitePixel = screen->white_pixel;
-	blackPixel = screen->black_pixel;
-
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 62208, 62208, 62208 ), NULL );
-	lightGreyPixel = reply->pixel;
-	free( reply );
-
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 32768, 32768, 32768 ), NULL );
-	darkGreyPixel = reply->pixel;
-	free( reply );
-
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 49152, 49152, 49152 ), NULL );
-	greyPixel = reply->pixel;
-	free( reply );
-
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 45824, 45824, 55808 ), NULL );
-	accentPixel = reply->pixel;
-	free( reply );
-
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 55808, 55808, 65535 ), NULL );
-	lightAccentPixel = reply->pixel;
-	free( reply );
-
-	reply = xcb_alloc_color_reply ( c, xcb_alloc_color ( c, colormap, 21504, 21504, 34560 ), NULL );
-	darkAccentPixel = reply->pixel;
-	free( reply );
-
-	blackContext = xcb_generate_id( c );
-	v[0] = blackPixel;
-	xcb_create_gc( c, blackContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	darkGreyContext = xcb_generate_id( c );
-	v[0] = darkGreyPixel;
-	xcb_create_gc( c, darkGreyContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	greyContext = xcb_generate_id( c );
-	v[0] = greyPixel;
-	xcb_create_gc( c, greyContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	lightGreyContext = xcb_generate_id( c );
-	v[0] = lightGreyPixel;
-	xcb_create_gc( c, lightGreyContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	whiteContext = xcb_generate_id( c );
-	v[0] = whitePixel;
-	xcb_create_gc( c, whiteContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	darkAccentContext = xcb_generate_id( c );
-	v[0] = darkAccentPixel;
-	xcb_create_gc( c, darkAccentContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	accentContext = xcb_generate_id( c );
-	v[0] = accentPixel;
-	xcb_create_gc( c, accentContext, screen->root, XCB_GC_FOREGROUND, v );
-
-	lightAccentContext = xcb_generate_id( c );
-	v[0] = lightAccentPixel;
-	xcb_create_gc( c, lightAccentContext, screen->root, XCB_GC_FOREGROUND, v );
+	colorWhite = SULFUR_COLOR_WHITE;
+	colorLightGrey = SulfurColor( 0xef, 0xef, 0xef );
+	colorGrey = SulfurColor( 0xa5, 0xa5, 0xa5 );
+	colorDarkGrey = SulfurColor( 0x73, 0x73, 0x73 );
+	colorBlack = SULFUR_COLOR_BLACK;
+	colorLightAccent = SulfurColor( 0xcf, 0xcf, 0xff );
+	colorAccent = SulfurColor( 0xa7, 0xa7, 0xd7 );
+	colorDarkAccent = SulfurColor( 0x2d, 0x2d, 0x63 );
 }
 
 void SetupAtoms() {	
@@ -365,13 +287,13 @@ void SetupFonts() {
 	v[2] = windowFont;
 
 	activeFontContext = xcb_generate_id( c );
-	v[0] = blackPixel;
-	v[1] = lightGreyPixel;
+	v[0] = colorBlack;
+	v[1] = colorLightGrey;
 	xcb_create_gc( c, activeFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
 
 	inactiveFontContext = xcb_generate_id( c );
-	v[0] = darkGreyPixel;
-	v[1] = whitePixel;
+	v[0] = colorDarkGrey;
+	v[1] = colorWhite;
 	xcb_create_gc( c, inactiveFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
 }
 
@@ -414,20 +336,17 @@ void Quit( int r ) {
 void SetRootBackground() {
 	xcb_pixmap_t pixmap = xcb_generate_id( c );
 	unsigned int v[1] = { pixmap };
-	xcb_point_t lightPoints[2] = {{0,0},{1,1}};
-	xcb_point_t darkPoints[2] = {{0,1},{1,0}};
 
 	xcb_create_pixmap( c, screen->root_depth, pixmap, screen->root, 2, 2 );
-	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, greyContext, 2, lightPoints );
-	xcb_poly_point( c, XCB_COORD_MODE_ORIGIN, pixmap, darkGreyContext, 2, darkPoints );
+	SulfurDrawFill( pixmap, colorGrey, 0, 0, 2, 2 );
+	SulfurDrawLine( pixmap, colorDarkGrey, 0, 0, 1, 1 );
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
 	xcb_clear_area( c, 1, screen->root, 0, 0, screen->width_in_pixels, screen->height_in_pixels );
-
 	xcb_flush( c );
 }
 
 void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
-	unsigned int v[2] = { 	whitePixel, 
+	unsigned int v[2] = { 	colorWhite, 
 							XCB_EVENT_MASK_EXPOSURE | 
 							XCB_EVENT_MASK_BUTTON_PRESS | 
 							XCB_EVENT_MASK_BUTTON_RELEASE | 
@@ -739,7 +658,7 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 
 void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 	xcb_get_property_cookie_t cookie;
-    	xcb_get_property_reply_t *reply;
+    xcb_get_property_reply_t *reply;
 	client_t *n = GetClientByWindow( e->window );
 
 	if ( n == NULL ) {
@@ -800,35 +719,13 @@ int main( int argc, char** argv ) {
 
 	printf( "%s %s, build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
 
-	display = getenv( "DISPLAY" );
-	if ( display == NULL )
-		display = ":0";
-
-	printf( "starting on display %s\n", display );
-
-	for ( i = 1; i < argc; i++ ) {
-		if ( !strcmp( argv[i], "-display" ) ) {
-			if ( ++i < argc ) {
-				strncpy( display, argv[i], 127 );
-				continue;
-			} else {
-				fprintf( stderr, "error: -display requires argument\n" );
-				exit( 1 );
-			}
-		} else {
-			fprintf( stderr, "error: unknown argument '%s'\n", argv[i] );
-			exit( 1 );
-		}
-	}
-
-	c = xcb_connect( display, NULL );
-	if ( xcb_connection_has_error( c ) ) {
-			printf( "Uh oh! It looks like X isn't running.\n" );
-			printf( "You'll need to start it before you can run makron.\n" );
+	if ( SulfurInit( NULL ) != 0 ) {
+			printf( "Problem starting up. Is X running?\n" );
 			Cleanup();
 			return 1;
 	}
-	screen = xcb_setup_roots_iterator( xcb_get_setup( c ) ).data;
+	c = sulfurGetXcbConn();
+	screen = sulfurGetXcbScreen();
 	if ( BecomeWM() < 0 ) {
 		printf( "Uh oh! It looks like there's another window manager running.\n" );
 		printf( "You'll need to close it before you can run makron.\n" );
@@ -836,7 +733,6 @@ int main( int argc, char** argv ) {
 		return 1;
 	}
 
-	colormap = screen->default_colormap;
 	SetupAtoms();
 	SetupColors();
 	SetupFonts();
