@@ -174,67 +174,30 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 	xcb_flush( c );
 }
 
+void DrawRect( client_t *n, int context, int x, int y, int w, int h ) {
+	xcb_rectangle_t rect[1] = {{ .x = x, .y = y, .width = w, .height = h }};
+	xcb_poly_rectangle( c, n->parent, context, 1, rect );
+}
+
+void DrawFill( client_t *n, int context, int x, int y, int w, int h ) {
+	xcb_rectangle_t rect[1] = {{ .x = x, .y = y, .width = w, .height = h }};
+	xcb_poly_fill_rectangle( c, n->parent, context, 1, rect );
+}
+
+void DrawLine( client_t *n, int context, int x1, int y1, int x2, int y2 ) {
+	xcb_segment_t segment[1] = {{ .x1 = x1, .y1 = y1, .x2 = x2, .y2 = y2 }};
+	xcb_poly_segment( c, n->parent, context, 1, segment );
+}
+
 void DrawFrame( client_t *n ) {
-	xcb_rectangle_t closeRectDark[1];
-	xcb_rectangle_t closeRectLight[1];
-	xcb_rectangle_t closeRectGrey[1];
-	xcb_rectangle_t borderRect[1];
-	xcb_segment_t topBorderSegment[1];
-	xcb_segment_t titleAccent[2];
-	xcb_segment_t titleAccentShadow[2];
-	xcb_segment_t pinstripeSegment[2];
-	int textLen = 0;
-	int textWidth = 0;
-	int textPos = 0;
+	int i;
+	int textLen = 0, textWidth = 0, textPos = 0;
 	xcb_query_text_extents_reply_t *r;
 	xcb_char2b_t *s;
 
 	if( n == NULL || n->managementState == STATE_NO_REDIRECT ) {
 		return;
 	}
-
-	borderRect[0].x = 0;
-	borderRect[0].y = 0;
-	borderRect[0].width = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1;  
-	borderRect[0].height = n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1;
-
-	topBorderSegment[0].x1 = 1;
-	topBorderSegment[0].y1 = BORDER_SIZE_TOP - 1;
-	topBorderSegment[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
-	topBorderSegment[0].y2 = BORDER_SIZE_TOP - 1;
-
-	titleAccent[0].x1 = 1;
-	titleAccent[0].y1 = 1;
-	titleAccent[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
-	titleAccent[0].y2 = 1;
-	titleAccent[1].x1 = 1;
-	titleAccent[1].y1 = 1;
-	titleAccent[1].x2 = 1;  
-	titleAccent[1].y2 = BORDER_SIZE_TOP - 2;
-
-	titleAccentShadow[0].x1 = 1;
-	titleAccentShadow[0].y1 = BORDER_SIZE_TOP - 2;
-	titleAccentShadow[0].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
-	titleAccentShadow[0].y2 = BORDER_SIZE_TOP - 2;
-	titleAccentShadow[1].x1 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;
-	titleAccentShadow[1].y1 = 1;
-	titleAccentShadow[1].x2 = n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2;  
-	titleAccentShadow[1].y2 = BORDER_SIZE_TOP - 2;
-
-	closeRectDark[0].x = 9;
-	closeRectDark[0].y = 4;
-	closeRectDark[0].width = 11;  
-	closeRectDark[0].height = 11;
-
-	closeRectLight[0].x = 10;
-	closeRectLight[0].y = 5;
-	closeRectLight[0].width = 9;  
-	closeRectLight[0].height = 9;
-
-	closeRectGrey[0].x = 11;
-	closeRectGrey[0].y = 6;
-	closeRectGrey[0].width = 7;  
-	closeRectGrey[0].height = 7;
 
 	textLen = strnlen( n->name, 256 );
 	s = malloc( textLen * sizeof( xcb_char2b_t ) );
@@ -249,28 +212,33 @@ void DrawFrame( client_t *n ) {
 	textPos = ( ( n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
 	if ( n->parent == activeWindow ) {
+		DrawFill( n, lightGreyContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		DrawRect( n, blackContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
-		xcb_poly_fill_rectangle( c, n->parent, lightGreyContext, 1, borderRect );
-		xcb_poly_rectangle( c, n->parent, blackContext, 1, borderRect );
-		xcb_poly_segment( c, n->parent, blackContext, 1, topBorderSegment );
+		DrawLine( n, blackContext, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
 
-		xcb_poly_segment( c, n->parent, lightAccentContext, 2, titleAccent );
-		xcb_poly_segment( c, n->parent, accentContext, 2, titleAccentShadow );
-
-		xcb_poly_fill_rectangle( c, n->parent, darkAccentContext, 1, closeRectDark );
-		if ( wmState == WMSTATE_CLOSE && mouseIsOverCloseButton ) {
-
-		} else {
-			xcb_poly_rectangle( c, n->parent, lightAccentContext, 1, closeRectLight );
-			xcb_poly_fill_rectangle( c, n->parent, greyContext, 1, closeRectGrey );
+		for ( i = 4; i < 16; i += 2 ) {
+			DrawLine( n, greyContext, 2, i, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 3, i );
 		}
-		
 
+		DrawLine( n, lightAccentContext, 1, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1 );
+		DrawLine( n, lightAccentContext, 1, 1, 1, BORDER_SIZE_TOP - 2 );
+		DrawLine( n, accentContext, 1, BORDER_SIZE_TOP - 2, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+		DrawLine( n, accentContext, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+
+		DrawRect( n, lightGreyContext, 8, 3, 12, 12 );
+		DrawFill( n, darkAccentContext, 9, 4, 11, 11 );
+		if ( ! ( wmState == WMSTATE_CLOSE && mouseIsOverCloseButton ) ) {
+			DrawRect( n, lightAccentContext, 10, 5, 9, 9 );
+			DrawFill( n, greyContext, 11, 6, 7, 7 );
+		}
+		DrawFill( n, lightGreyContext, textPos - 8, 3, textWidth + 16, 12 );
 		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
 	} else {
-		xcb_poly_fill_rectangle( c, n->parent, whiteContext, 1, borderRect );
-		xcb_poly_rectangle( c, n->parent, darkGreyContext, 1, borderRect );
-		xcb_poly_segment( c, n->parent, darkGreyContext, 1, topBorderSegment );
+		DrawFill( n, lightGreyContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		DrawRect( n, blackContext, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+
+		DrawLine( n, blackContext, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
 		xcb_image_text_8( c, textLen, n->parent, inactiveFontContext, textPos, 14, n->name );
 	}
 	
